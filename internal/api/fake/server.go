@@ -5,8 +5,6 @@
 package fake
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -16,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -653,7 +653,7 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	id := newUUID()
+	id := uuid.NewString()
 	secret := "fake-token-" + id[:8]
 	ts := now()
 	t := &token{
@@ -842,7 +842,7 @@ func (s *Server) createTokenPolicy(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	id := newUUID()
+	id := uuid.NewString()
 	p := &tokenPolicy{
 		ID:        id,
 		Domain:    req.Domain,
@@ -962,21 +962,6 @@ func domainOwnsQname(domainName, qname string) bool {
 		return true
 	}
 	return strings.HasSuffix(qname, "."+domainName)
-}
-
-// newUUID generates a random UUID (version 4) string.
-func newUUID() string {
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	b[6] = (b[6] & 0x0f) | 0x40 // version 4
-	b[8] = (b[8] & 0x3f) | 0x80 // variant bits
-	return fmt.Sprintf("%s-%s-%s-%s-%s",
-		hex.EncodeToString(b[0:4]),
-		hex.EncodeToString(b[4:6]),
-		hex.EncodeToString(b[6:8]),
-		hex.EncodeToString(b[8:10]),
-		hex.EncodeToString(b[10:]),
-	)
 }
 
 // paginate returns a page of items starting from the cursor, and the next cursor.

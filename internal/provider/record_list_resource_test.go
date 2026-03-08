@@ -26,7 +26,7 @@ func TestAccRecordListResource(t *testing.T) {
 			},
 			{
 				Query:  true,
-				Config: testAccRecordListQueryConfig(providerConfig, domainName),
+				Config: testAccRecordListQueryConfig(domainName),
 				QueryResultChecks: []querycheck.QueryResultCheck{
 					querycheck.ExpectLength("desec_record.all", 2),
 					querycheck.ExpectIdentity("desec_record.all", map[string]knownvalue.Check{
@@ -71,7 +71,7 @@ resource "desec_record" "www" {
 `, providerConfig, domain)
 }
 
-func testAccRecordListQueryConfig(providerConfig, domain string) string {
+func testAccRecordListQueryConfig(domain string) string {
 	return fmt.Sprintf(`
 list "desec_record" "all" {
   provider = desec

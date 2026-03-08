@@ -24,7 +24,7 @@ func TestAccRecordResource(t *testing.T) {
 		Steps: []resource.TestStep{
 			// Create and Read.
 			{
-				Config: testAccRecordResourceConfig(providerConfig, domainName, "www", "A", 3600, `"1.2.3.4"`),
+				Config: testAccRecordResourceConfig(providerConfig, domainName, "www", 3600, `"1.2.3.4"`),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue(
 						"desec_record.test",
@@ -62,7 +62,7 @@ func TestAccRecordResource(t *testing.T) {
 			},
 			// Update TTL and records.
 			{
-				Config: testAccRecordResourceConfig(providerConfig, domainName, "www", "A", 7200, `"1.2.3.4", "5.6.7.8"`),
+				Config: testAccRecordResourceConfig(providerConfig, domainName, "www", 7200, `"1.2.3.4", "5.6.7.8"`),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue(
 						"desec_record.test",
@@ -90,7 +90,7 @@ func TestAccRecordResourceApex(t *testing.T) {
 		Steps: []resource.TestStep{
 			// Create record at zone apex using "@".
 			{
-				Config: testAccRecordResourceConfig(providerConfig2, domainName, "@", "A", 3600, `"10.0.0.1"`),
+				Config: testAccRecordResourceConfig(providerConfig2, domainName, "@", 3600, `"10.0.0.1"`),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue(
 						"desec_record.test",
@@ -121,7 +121,7 @@ func TestAccRecordResourceIdentity(t *testing.T) {
 		Steps: []resource.TestStep{
 			// Create and verify identity is set.
 			{
-				Config: testAccRecordResourceConfig(providerConfig, domainName, "www", "A", 3600, `"1.2.3.4"`),
+				Config: testAccRecordResourceConfig(providerConfig, domainName, "www", 3600, `"1.2.3.4"`),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectIdentity(
 						"desec_record.test",
@@ -143,7 +143,7 @@ func TestAccRecordResourceIdentity(t *testing.T) {
 	})
 }
 
-func testAccRecordResourceConfig(providerConfig, domainName, subname, rrtype string, ttl int, records string) string {
+func testAccRecordResourceConfig(providerConfig, domainName, subname string, ttl int, records string) string {
 	return fmt.Sprintf(`
 %s
 
@@ -154,9 +154,9 @@ resource "desec_domain" "test" {
 resource "desec_record" "test" {
   domain  = desec_domain.test.name
   subname = %q
-  type    = %q
+  type    = "A"
   ttl     = %d
   records = [%s]
 }
-`, providerConfig, domainName, subname, rrtype, ttl, records)
+`, providerConfig, domainName, subname, ttl, records)
 }

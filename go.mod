@@ -3,6 +3,7 @@ module github.com/timofurrer/terraform-provider-desec
 go 1.26.1
 
 require (
+	github.com/google/uuid v1.6.0
 	github.com/hashicorp/terraform-plugin-framework v1.18.0
 	github.com/hashicorp/terraform-plugin-go v0.30.0
 	github.com/hashicorp/terraform-plugin-testing v1.14.0
