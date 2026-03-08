@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/identityschema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
@@ -22,6 +23,23 @@ import (
 // Ensure tokenResource fully satisfies framework interfaces.
 var _ resource.Resource = (*tokenResource)(nil)
 var _ resource.ResourceWithImportState = (*tokenResource)(nil)
+var _ resource.ResourceWithIdentity = (*tokenResource)(nil)
+
+// tokenIdentityModel describes the identity of a token resource.
+type tokenIdentityModel struct {
+	ID types.String `tfsdk:"id"`
+}
+
+func (r *tokenResource) IdentitySchema(_ context.Context, _ resource.IdentitySchemaRequest, resp *resource.IdentitySchemaResponse) {
+	resp.IdentitySchema = identityschema.Schema{
+		Attributes: map[string]identityschema.Attribute{
+			"id": identityschema.StringAttribute{
+				Description:       "The token's UUID.",
+				RequiredForImport: true,
+			},
+		},
+	}
+}
 
 // newTokenResource creates a new tokenResource.
 func newTokenResource() resource.Resource {
@@ -208,6 +226,9 @@ func (r *tokenResource) Create(ctx context.Context, req resource.CreateRequest, 
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	resp.Diagnostics.Append(resp.Identity.Set(ctx, tokenIdentityModel{
+		ID: types.StringValue(token.ID),
+	})...)
 }
 
 func (r *tokenResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -234,6 +255,9 @@ func (r *tokenResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	resp.Diagnostics.Append(resp.Identity.Set(ctx, tokenIdentityModel{
+		ID: types.StringValue(token.ID),
+	})...)
 }
 
 func (r *tokenResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
@@ -299,7 +323,7 @@ func (r *tokenResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 }
 
 func (r *tokenResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	resource.ImportStatePassthroughWithIdentity(ctx, path.Root("id"), path.Root("id"), req, resp)
 }
 
 // tokenToModel converts an api.Token into a tokenResourceModel.

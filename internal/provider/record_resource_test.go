@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
+	"github.com/hashicorp/terraform-plugin-testing/tfversion"
 )
 
 func TestAccRecordResource(t *testing.T) {
@@ -102,6 +103,41 @@ func TestAccRecordResourceApex(t *testing.T) {
 						knownvalue.StringExact("A"),
 					),
 				},
+			},
+		},
+	})
+}
+
+func TestAccRecordResourceIdentity(t *testing.T) {
+	domainName := testAccDomainName(t, "id-rec-acc")
+	providerConfig, factories := newTestAccEnv(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		TerraformVersionChecks: []tfversion.TerraformVersionCheck{
+			tfversion.SkipBelow(tfversion.Version1_12_0),
+		},
+		Steps: []resource.TestStep{
+			// Create and verify identity is set.
+			{
+				Config: testAccRecordResourceConfig(providerConfig, domainName, "www", "A", 3600, `"1.2.3.4"`),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectIdentity(
+						"desec_record.test",
+						map[string]knownvalue.Check{
+							"domain":  knownvalue.StringExact(domainName),
+							"subname": knownvalue.StringExact("www"),
+							"type":    knownvalue.StringExact("A"),
+						},
+					),
+				},
+			},
+			// Import using identity.
+			{
+				ResourceName:    "desec_record.test",
+				ImportState:     true,
+				ImportStateKind: resource.ImportBlockWithResourceIdentity,
 			},
 		},
 	})

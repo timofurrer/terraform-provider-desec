@@ -10,6 +10,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/identityschema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -21,6 +22,28 @@ import (
 // Ensure tokenPolicyResource fully satisfies framework interfaces.
 var _ resource.Resource = (*tokenPolicyResource)(nil)
 var _ resource.ResourceWithImportState = (*tokenPolicyResource)(nil)
+var _ resource.ResourceWithIdentity = (*tokenPolicyResource)(nil)
+
+// tokenPolicyIdentityModel describes the identity of a token policy resource.
+type tokenPolicyIdentityModel struct {
+	TokenID types.String `tfsdk:"token_id"`
+	ID      types.String `tfsdk:"id"`
+}
+
+func (r *tokenPolicyResource) IdentitySchema(_ context.Context, _ resource.IdentitySchemaRequest, resp *resource.IdentitySchemaResponse) {
+	resp.IdentitySchema = identityschema.Schema{
+		Attributes: map[string]identityschema.Attribute{
+			"token_id": identityschema.StringAttribute{
+				Description:       "The UUID of the token this policy belongs to.",
+				RequiredForImport: true,
+			},
+			"id": identityschema.StringAttribute{
+				Description:       "The policy's UUID.",
+				RequiredForImport: true,
+			},
+		},
+	}
+}
 
 // newTokenPolicyResource creates a new tokenPolicyResource.
 func newTokenPolicyResource() resource.Resource {
@@ -141,6 +164,10 @@ func (r *tokenPolicyResource) Create(ctx context.Context, req resource.CreateReq
 	tokenPolicyToModel(policy, &data)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	resp.Diagnostics.Append(resp.Identity.Set(ctx, tokenPolicyIdentityModel{
+		TokenID: data.TokenID,
+		ID:      data.ID,
+	})...)
 }
 
 func (r *tokenPolicyResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -165,6 +192,10 @@ func (r *tokenPolicyResource) Read(ctx context.Context, req resource.ReadRequest
 	tokenPolicyToModel(policy, &data)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	resp.Diagnostics.Append(resp.Identity.Set(ctx, tokenPolicyIdentityModel{
+		TokenID: data.TokenID,
+		ID:      data.ID,
+	})...)
 }
 
 func (r *tokenPolicyResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
@@ -220,18 +251,27 @@ func (r *tokenPolicyResource) Delete(ctx context.Context, req resource.DeleteReq
 }
 
 func (r *tokenPolicyResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Import format: "token_id/policy_id"
-	tokenID, policyID, ok := strings.Cut(req.ID, "/")
-	if !ok {
-		resp.Diagnostics.AddError(
-			"Invalid Import ID",
-			fmt.Sprintf("Expected import ID in the format 'token_id/policy_id', got %q", req.ID),
-		)
+	if req.ID != "" {
+		// Import format: "token_id/policy_id"
+		tokenID, policyID, ok := strings.Cut(req.ID, "/")
+		if !ok {
+			resp.Diagnostics.AddError(
+				"Invalid Import ID",
+				fmt.Sprintf("Expected import ID in the format 'token_id/policy_id', got %q", req.ID),
+			)
+			return
+		}
+		resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("token_id"), tokenID)...)
+		resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), policyID)...)
 		return
 	}
-
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("token_id"), tokenID)...)
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), policyID)...)
+	var identity tokenPolicyIdentityModel
+	resp.Diagnostics.Append(req.Identity.Get(ctx, &identity)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("token_id"), identity.TokenID)...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), identity.ID)...)
 }
 
 // tokenPolicyToModel converts an api.TokenPolicy into a tokenPolicyResourceModel.

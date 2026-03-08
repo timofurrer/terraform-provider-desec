@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/identityschema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
@@ -23,6 +24,23 @@ import (
 // Ensure DomainResource fully satisfies framework interfaces.
 var _ resource.Resource = (*domainResource)(nil)
 var _ resource.ResourceWithImportState = (*domainResource)(nil)
+var _ resource.ResourceWithIdentity = (*domainResource)(nil)
+
+// domainIdentityModel describes the identity of a domain resource.
+type domainIdentityModel struct {
+	Name types.String `tfsdk:"name"`
+}
+
+func (r *domainResource) IdentitySchema(_ context.Context, _ resource.IdentitySchemaRequest, resp *resource.IdentitySchemaResponse) {
+	resp.IdentitySchema = identityschema.Schema{
+		Attributes: map[string]identityschema.Attribute{
+			"name": identityschema.StringAttribute{
+				Description:       "The domain name.",
+				RequiredForImport: true,
+			},
+		},
+	}
+}
 
 // newDomainResource creates a new DomainResource.
 func newDomainResource() resource.Resource {
@@ -160,6 +178,9 @@ func (r *domainResource) Create(ctx context.Context, req resource.CreateRequest,
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	resp.Diagnostics.Append(resp.Identity.Set(ctx, domainIdentityModel{
+		Name: types.StringValue(domain.Name),
+	})...)
 }
 
 func (r *domainResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -186,6 +207,9 @@ func (r *domainResource) Read(ctx context.Context, req resource.ReadRequest, res
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	resp.Diagnostics.Append(resp.Identity.Set(ctx, domainIdentityModel{
+		Name: types.StringValue(domain.Name),
+	})...)
 }
 
 // Update is not implemented because all domain fields are either read-only or
@@ -210,7 +234,7 @@ func (r *domainResource) Delete(ctx context.Context, req resource.DeleteRequest,
 }
 
 func (r *domainResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resource.ImportStatePassthroughID(ctx, path.Root("name"), req, resp)
+	resource.ImportStatePassthroughWithIdentity(ctx, path.Root("name"), path.Root("name"), req, resp)
 }
 
 // domainToModel converts an api.Domain into a DomainResourceModel, filling in

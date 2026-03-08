@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
+	"github.com/hashicorp/terraform-plugin-testing/tfversion"
 )
 
 func TestAccDomainResource(t *testing.T) {
@@ -57,6 +58,39 @@ func TestAccDomainResource(t *testing.T) {
 				ResourceName:      "desec_domain.test",
 				ImportState:       true,
 				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
+func TestAccDomainResourceIdentity(t *testing.T) {
+	domainName := testAccDomainName(t, "id-acc-test")
+	providerConfig, factories := newTestAccEnv(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		TerraformVersionChecks: []tfversion.TerraformVersionCheck{
+			tfversion.SkipBelow(tfversion.Version1_12_0),
+		},
+		Steps: []resource.TestStep{
+			// Create and verify identity is set.
+			{
+				Config: testAccDomainResourceConfig(providerConfig, domainName),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectIdentity(
+						"desec_domain.test",
+						map[string]knownvalue.Check{
+							"name": knownvalue.StringExact(domainName),
+						},
+					),
+				},
+			},
+			// Import using identity.
+			{
+				ResourceName:    "desec_domain.test",
+				ImportState:     true,
+				ImportStateKind: resource.ImportBlockWithResourceIdentity,
 			},
 		},
 	})

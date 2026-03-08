@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
+	"github.com/hashicorp/terraform-plugin-testing/tfversion"
 )
 
 func TestAccTokenResource(t *testing.T) {
@@ -137,6 +138,37 @@ func TestAccTokenResourceWithSubnets(t *testing.T) {
 						}),
 					),
 				},
+			},
+		},
+	})
+}
+
+func TestAccTokenResourceIdentity(t *testing.T) {
+	providerConfig, factories := newTestAccEnv(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		TerraformVersionChecks: []tfversion.TerraformVersionCheck{
+			tfversion.SkipBelow(tfversion.Version1_12_0),
+		},
+		Steps: []resource.TestStep{
+			// Create and verify identity is set.
+			{
+				Config: testAccTokenResourceConfig(providerConfig, "identity-token", true, false),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectIdentityValue(
+						"desec_token.test",
+						tfjsonpath.New("id"),
+						knownvalue.NotNull(),
+					),
+				},
+			},
+			// Import using identity.
+			{
+				ResourceName:    "desec_token.test",
+				ImportState:     true,
+				ImportStateKind: resource.ImportBlockWithResourceIdentity,
 			},
 		},
 	})

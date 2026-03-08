@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/identityschema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -21,6 +22,33 @@ import (
 // Ensure RecordResource fully satisfies framework interfaces.
 var _ resource.Resource = (*recordResource)(nil)
 var _ resource.ResourceWithImportState = (*recordResource)(nil)
+var _ resource.ResourceWithIdentity = (*recordResource)(nil)
+
+// recordIdentityModel describes the identity of a record resource.
+type recordIdentityModel struct {
+	Domain  types.String `tfsdk:"domain"`
+	Subname types.String `tfsdk:"subname"`
+	Type    types.String `tfsdk:"type"`
+}
+
+func (r *recordResource) IdentitySchema(_ context.Context, _ resource.IdentitySchemaRequest, resp *resource.IdentitySchemaResponse) {
+	resp.IdentitySchema = identityschema.Schema{
+		Attributes: map[string]identityschema.Attribute{
+			"domain": identityschema.StringAttribute{
+				Description:       "The domain name this record belongs to.",
+				RequiredForImport: true,
+			},
+			"subname": identityschema.StringAttribute{
+				Description:       "The subdomain part of the record name.",
+				RequiredForImport: true,
+			},
+			"type": identityschema.StringAttribute{
+				Description:       "The DNS record type (e.g. A, AAAA, TXT).",
+				RequiredForImport: true,
+			},
+		},
+	}
+}
 
 // newRecordResource creates a new RecordResource.
 func newRecordResource() resource.Resource {
@@ -154,6 +182,11 @@ func (r *recordResource) Create(ctx context.Context, req resource.CreateRequest,
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	resp.Diagnostics.Append(resp.Identity.Set(ctx, recordIdentityModel{
+		Domain:  data.Domain,
+		Subname: data.Subname,
+		Type:    data.Type,
+	})...)
 }
 
 func (r *recordResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -185,6 +218,11 @@ func (r *recordResource) Read(ctx context.Context, req resource.ReadRequest, res
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	resp.Diagnostics.Append(resp.Identity.Set(ctx, recordIdentityModel{
+		Domain:  data.Domain,
+		Subname: data.Subname,
+		Type:    data.Type,
+	})...)
 }
 
 func (r *recordResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
@@ -244,19 +282,29 @@ func (r *recordResource) Delete(ctx context.Context, req resource.DeleteRequest,
 }
 
 func (r *recordResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Import format: "domain/subname/type" — e.g. "example.com/@/A"
-	parts := strings.SplitN(req.ID, "/", 3)
-	if len(parts) != 3 {
-		resp.Diagnostics.AddError(
-			"Invalid Import ID",
-			fmt.Sprintf("Expected import ID in the format 'domain/subname/type', got %q", req.ID),
-		)
+	if req.ID != "" {
+		// Import format: "domain/subname/type" — e.g. "example.com/@/A"
+		parts := strings.SplitN(req.ID, "/", 3)
+		if len(parts) != 3 {
+			resp.Diagnostics.AddError(
+				"Invalid Import ID",
+				fmt.Sprintf("Expected import ID in the format 'domain/subname/type', got %q", req.ID),
+			)
+			return
+		}
+		resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("domain"), parts[0])...)
+		resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("subname"), parts[1])...)
+		resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("type"), parts[2])...)
 		return
 	}
-
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("domain"), parts[0])...)
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("subname"), parts[1])...)
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("type"), parts[2])...)
+	var identity recordIdentityModel
+	resp.Diagnostics.Append(req.Identity.Get(ctx, &identity)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("domain"), identity.Domain)...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("subname"), identity.Subname)...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("type"), identity.Type)...)
 }
 
 // normalizeSubname converts an empty subname (zone apex as returned by the API)

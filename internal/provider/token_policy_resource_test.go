@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
+	"github.com/hashicorp/terraform-plugin-testing/tfversion"
 )
 
 func TestAccTokenPolicyResourceDefault(t *testing.T) {
@@ -183,6 +184,42 @@ func TestAccTokenPolicyResourceSubnameAndType(t *testing.T) {
 						knownvalue.Bool(true),
 					),
 				},
+			},
+		},
+	})
+}
+
+func TestAccTokenPolicyResourceIdentity(t *testing.T) {
+	providerConfig, factories := newTestAccEnv(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		TerraformVersionChecks: []tfversion.TerraformVersionCheck{
+			tfversion.SkipBelow(tfversion.Version1_12_0),
+		},
+		Steps: []resource.TestStep{
+			// Create and verify identity is set.
+			{
+				Config: testAccTokenPolicyResourceDefaultConfig(providerConfig),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectIdentityValue(
+						"desec_token_policy.default",
+						tfjsonpath.New("token_id"),
+						knownvalue.NotNull(),
+					),
+					statecheck.ExpectIdentityValue(
+						"desec_token_policy.default",
+						tfjsonpath.New("id"),
+						knownvalue.NotNull(),
+					),
+				},
+			},
+			// Import using identity.
+			{
+				ResourceName:    "desec_token_policy.default",
+				ImportState:     true,
+				ImportStateKind: resource.ImportBlockWithResourceIdentity,
 			},
 		},
 	})
