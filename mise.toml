@@ -2,3 +2,4 @@
 golang = "1.26.1"
 golangci-lint = "2.11.2"
 opentofu = "1.11.5"
+terraform = "1.14.6"

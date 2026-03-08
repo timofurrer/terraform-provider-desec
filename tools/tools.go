@@ -12,7 +12,7 @@ import (
 
 // Format Terraform code for use in documentation.
 // Requires OpenTofu or Terraform to be installed.
-//go:generate tofu fmt -recursive ../examples/
+//go:generate terraform fmt -recursive ../examples/
 
 // Generate documentation.
 //go:generate go run github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs generate --provider-dir .. --provider-name desec
