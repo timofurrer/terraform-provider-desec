@@ -93,6 +93,8 @@ func (p *desecProvider) Resources(_ context.Context) []func() resource.Resource 
 	return []func() resource.Resource{
 		newDomainResource,
 		newRecordResource,
+		newTokenResource,
+		newTokenPolicyResource,
 	}
 }
 
@@ -103,6 +105,10 @@ func (p *desecProvider) DataSources(_ context.Context) []func() datasource.DataS
 		newRecordDataSource,
 		newRecordsDataSource,
 		newZonefileDataSource,
+		newTokenDataSource,
+		newTokensDataSource,
+		newTokenPolicyDataSource,
+		newTokenPoliciesDataSource,
 	}
 }
 

@@ -5,6 +5,8 @@
 package fake
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -50,20 +52,65 @@ type rrset struct {
 	Touched string   `json:"touched"`
 }
 
+// token is the in-memory representation of an API token.
+type token struct {
+	ID               string   `json:"id"`
+	Created          string   `json:"created"`
+	LastUsed         *string  `json:"last_used"`
+	Owner            string   `json:"owner"`
+	UserOverride     *string  `json:"user_override"`
+	MFA              *bool    `json:"mfa"`
+	MaxAge           *string  `json:"max_age"`
+	MaxUnusedPeriod  *string  `json:"max_unused_period"`
+	Name             string   `json:"name"`
+	PermCreateDomain bool     `json:"perm_create_domain"`
+	PermDeleteDomain bool     `json:"perm_delete_domain"`
+	PermManageTokens bool     `json:"perm_manage_tokens"`
+	AllowedSubnets   []string `json:"allowed_subnets"`
+	AutoPolicy       bool     `json:"auto_policy"`
+	IsValid          bool     `json:"is_valid"`
+	secret           string   // stored internally, not marshaled directly
+}
+
+// tokenResponse is the JSON-serializable form of a token; the secret field is
+// only included in create responses (omitempty ensures it is omitted otherwise).
+type tokenResponse struct {
+	token
+	Token string `json:"token,omitempty"`
+}
+
+// tokenPolicy is the in-memory representation of a token scoping policy.
+type tokenPolicy struct {
+	ID        string  `json:"id"`
+	Domain    *string `json:"domain"`
+	Subname   *string `json:"subname"`
+	Type      *string `json:"type"`
+	PermWrite bool    `json:"perm_write"`
+}
+
+// isDefaultPolicy returns true when all scope fields are nil (the catch-all policy).
+func isDefaultPolicy(p *tokenPolicy) bool {
+	return p.Domain == nil && p.Subname == nil && p.Type == nil
+}
+
 // Server is a fake deSEC API server backed by in-memory state.
 type Server struct {
-	mu      sync.RWMutex
-	domains map[string]*domain           // key: domain name
-	rrsets  map[string]map[string]*rrset // key: domain name -> "subname/type"
-	srv     *httptest.Server
+	mu       sync.RWMutex
+	domains  map[string]*domain                 // key: domain name
+	rrsets   map[string]map[string]*rrset       // key: domain name -> "subname/type"
+	tokens   map[string]*token                  // key: token ID
+	policies map[string]map[string]*tokenPolicy // key: token ID -> policy ID
+	srv      *httptest.Server
 }
 
 // NewServer creates and starts a new fake deSEC API server.
 // The returned Server must be closed with Close() when done.
 func NewServer() *Server {
 	s := &Server{
-		domains: make(map[string]*domain),
-		rrsets:  make(map[string]map[string]*rrset),
+		domains:  make(map[string]*domain),
+		rrsets:   make(map[string]map[string]*rrset),
+		tokens:   make(map[string]*token),
+		policies: make(map[string]map[string]*tokenPolicy),
 	}
 
 	mux := http.NewServeMux()
@@ -80,6 +127,16 @@ func NewServer() *Server {
 	mux.Handle("PATCH /api/v1/domains/{name}/rrsets/{subname}/{type}/", s.requireAuthentication(http.HandlerFunc(s.updateRRset)))
 	mux.Handle("PUT /api/v1/domains/{name}/rrsets/{subname}/{type}/", s.requireAuthentication(http.HandlerFunc(s.updateRRset)))
 	mux.Handle("DELETE /api/v1/domains/{name}/rrsets/{subname}/{type}/", s.requireAuthentication(http.HandlerFunc(s.deleteRRset)))
+	mux.Handle("GET /api/v1/auth/tokens/", s.requireAuthentication(http.HandlerFunc(s.listTokens)))
+	mux.Handle("POST /api/v1/auth/tokens/", s.requireAuthentication(http.HandlerFunc(s.createToken)))
+	mux.Handle("GET /api/v1/auth/tokens/{id}/", s.requireAuthentication(http.HandlerFunc(s.getToken)))
+	mux.Handle("PATCH /api/v1/auth/tokens/{id}/", s.requireAuthentication(http.HandlerFunc(s.updateToken)))
+	mux.Handle("DELETE /api/v1/auth/tokens/{id}/", s.requireAuthentication(http.HandlerFunc(s.deleteToken)))
+	mux.Handle("GET /api/v1/auth/tokens/{id}/policies/rrsets/", s.requireAuthentication(http.HandlerFunc(s.listTokenPolicies)))
+	mux.Handle("POST /api/v1/auth/tokens/{id}/policies/rrsets/", s.requireAuthentication(http.HandlerFunc(s.createTokenPolicy)))
+	mux.Handle("GET /api/v1/auth/tokens/{id}/policies/rrsets/{policy_id}/", s.requireAuthentication(http.HandlerFunc(s.getTokenPolicy)))
+	mux.Handle("PATCH /api/v1/auth/tokens/{id}/policies/rrsets/{policy_id}/", s.requireAuthentication(http.HandlerFunc(s.updateTokenPolicy)))
+	mux.Handle("DELETE /api/v1/auth/tokens/{id}/policies/rrsets/{policy_id}/", s.requireAuthentication(http.HandlerFunc(s.deleteTokenPolicy)))
 
 	s.srv = httptest.NewServer(mux)
 	return s
@@ -535,6 +592,350 @@ func (s *Server) bulkUpdateRRsets(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, results)
 }
 
+// ---- Token handlers ----
+
+func (s *Server) listTokens(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	all := make([]*token, 0, len(s.tokens))
+	for _, t := range s.tokens {
+		all = append(all, t)
+	}
+	// Sort by creation time for deterministic output.
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].Created < all[j].Created
+	})
+
+	result := make([]tokenResponse, 0, len(all))
+	for _, t := range all {
+		result = append(result, tokenResponse{token: *t})
+	}
+
+	cursor := r.URL.Query().Get("cursor")
+	page, nextCursor := paginate(result, cursor)
+
+	if nextCursor != "" {
+		linkURL := *r.URL
+		q := linkURL.Query()
+		q.Set("cursor", nextCursor)
+		linkURL.RawQuery = q.Encode()
+		w.Header().Set("Link", fmt.Sprintf(`<%s>; rel="next"`, s.srv.URL+linkURL.String()))
+	}
+
+	writeJSON(w, http.StatusOK, page)
+}
+
+func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name             string   `json:"name"`
+		PermCreateDomain bool     `json:"perm_create_domain"`
+		PermDeleteDomain bool     `json:"perm_delete_domain"`
+		PermManageTokens bool     `json:"perm_manage_tokens"`
+		AllowedSubnets   []string `json:"allowed_subnets"`
+		AutoPolicy       bool     `json:"auto_policy"`
+		MaxAge           *string  `json:"max_age"`
+		MaxUnusedPeriod  *string  `json:"max_unused_period"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"detail":"Parse error."}`, http.StatusBadRequest)
+		return
+	}
+
+	allowedSubnets := req.AllowedSubnets
+	if allowedSubnets == nil {
+		allowedSubnets = []string{"0.0.0.0/0", "::/0"}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	id := newUUID()
+	secret := "fake-token-" + id[:8]
+	ts := now()
+	t := &token{
+		ID:               id,
+		Created:          ts,
+		LastUsed:         nil,
+		Owner:            "test@example.com",
+		UserOverride:     nil,
+		MFA:              nil,
+		MaxAge:           req.MaxAge,
+		MaxUnusedPeriod:  req.MaxUnusedPeriod,
+		Name:             req.Name,
+		PermCreateDomain: req.PermCreateDomain,
+		PermDeleteDomain: req.PermDeleteDomain,
+		PermManageTokens: req.PermManageTokens,
+		AllowedSubnets:   allowedSubnets,
+		AutoPolicy:       req.AutoPolicy,
+		IsValid:          true,
+		secret:           secret,
+	}
+	s.tokens[id] = t
+
+	// Include secret in the create response only.
+	writeJSON(w, http.StatusCreated, tokenResponse{token: *t, Token: secret})
+}
+
+func (s *Server) getToken(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	t, ok := s.tokens[id]
+	if !ok {
+		http.Error(w, `{"detail":"Not found."}`, http.StatusNotFound)
+		return
+	}
+	// Do NOT include the secret.
+	writeJSON(w, http.StatusOK, tokenResponse{token: *t})
+}
+
+func (s *Server) updateToken(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	t, ok := s.tokens[id]
+	if !ok {
+		http.Error(w, `{"detail":"Not found."}`, http.StatusNotFound)
+		return
+	}
+
+	// We use json.RawMessage to distinguish between a field being absent vs. null.
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		http.Error(w, `{"detail":"Parse error."}`, http.StatusBadRequest)
+		return
+	}
+
+	if v, ok := raw["name"]; ok {
+		_ = json.Unmarshal(v, &t.Name)
+	}
+	if v, ok := raw["perm_create_domain"]; ok {
+		_ = json.Unmarshal(v, &t.PermCreateDomain)
+	}
+	if v, ok := raw["perm_delete_domain"]; ok {
+		_ = json.Unmarshal(v, &t.PermDeleteDomain)
+	}
+	if v, ok := raw["perm_manage_tokens"]; ok {
+		_ = json.Unmarshal(v, &t.PermManageTokens)
+	}
+	if v, ok := raw["allowed_subnets"]; ok {
+		_ = json.Unmarshal(v, &t.AllowedSubnets)
+	}
+	if v, ok := raw["auto_policy"]; ok {
+		_ = json.Unmarshal(v, &t.AutoPolicy)
+	}
+	if v, ok := raw["max_age"]; ok {
+		_ = json.Unmarshal(v, &t.MaxAge)
+	}
+	if v, ok := raw["max_unused_period"]; ok {
+		_ = json.Unmarshal(v, &t.MaxUnusedPeriod)
+	}
+
+	writeJSON(w, http.StatusOK, tokenResponse{token: *t})
+}
+
+func (s *Server) deleteToken(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.tokens, id)
+	delete(s.policies, id) // cascade-delete all policies for this token
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ---- Token policy handlers ----
+
+func (s *Server) listTokenPolicies(w http.ResponseWriter, r *http.Request) {
+	tokenID := r.PathValue("id")
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if _, ok := s.tokens[tokenID]; !ok {
+		http.Error(w, `{"detail":"Not found."}`, http.StatusNotFound)
+		return
+	}
+
+	all := make([]*tokenPolicy, 0)
+	for _, p := range s.policies[tokenID] {
+		all = append(all, p)
+	}
+	// Stable sort: default policy first, then by ID.
+	sort.Slice(all, func(i, j int) bool {
+		iDef := isDefaultPolicy(all[i])
+		jDef := isDefaultPolicy(all[j])
+		if iDef != jDef {
+			return iDef // default policy sorts first
+		}
+		return all[i].ID < all[j].ID
+	})
+
+	result := make([]tokenPolicy, 0, len(all))
+	for _, p := range all {
+		result = append(result, *p)
+	}
+
+	cursor := r.URL.Query().Get("cursor")
+	page, nextCursor := paginate(result, cursor)
+
+	if nextCursor != "" {
+		linkURL := *r.URL
+		q := linkURL.Query()
+		q.Set("cursor", nextCursor)
+		linkURL.RawQuery = q.Encode()
+		w.Header().Set("Link", fmt.Sprintf(`<%s>; rel="next"`, s.srv.URL+linkURL.String()))
+	}
+
+	writeJSON(w, http.StatusOK, page)
+}
+
+func (s *Server) createTokenPolicy(w http.ResponseWriter, r *http.Request) {
+	tokenID := r.PathValue("id")
+
+	var req struct {
+		Domain    *string `json:"domain"`
+		Subname   *string `json:"subname"`
+		Type      *string `json:"type"`
+		PermWrite bool    `json:"perm_write"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"detail":"Parse error."}`, http.StatusBadRequest)
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.tokens[tokenID]; !ok {
+		http.Error(w, `{"detail":"Not found."}`, http.StatusNotFound)
+		return
+	}
+
+	if s.policies[tokenID] == nil {
+		s.policies[tokenID] = make(map[string]*tokenPolicy)
+	}
+
+	incoming := &tokenPolicy{Domain: req.Domain, Subname: req.Subname, Type: req.Type}
+
+	// Enforce: a specific policy requires a default policy to already exist.
+	if !isDefaultPolicy(incoming) {
+		hasDefault := false
+		for _, p := range s.policies[tokenID] {
+			if isDefaultPolicy(p) {
+				hasDefault = true
+				break
+			}
+		}
+		if !hasDefault {
+			http.Error(w, `{"detail":"A default policy must exist before specific policies can be created."}`, http.StatusBadRequest)
+			return
+		}
+	}
+
+	id := newUUID()
+	p := &tokenPolicy{
+		ID:        id,
+		Domain:    req.Domain,
+		Subname:   req.Subname,
+		Type:      req.Type,
+		PermWrite: req.PermWrite,
+	}
+	s.policies[tokenID][id] = p
+
+	writeJSON(w, http.StatusCreated, p)
+}
+
+func (s *Server) getTokenPolicy(w http.ResponseWriter, r *http.Request) {
+	tokenID := r.PathValue("id")
+	policyID := r.PathValue("policy_id")
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if _, ok := s.tokens[tokenID]; !ok {
+		http.Error(w, `{"detail":"Not found."}`, http.StatusNotFound)
+		return
+	}
+
+	p, ok := s.policies[tokenID][policyID]
+	if !ok {
+		http.Error(w, `{"detail":"Not found."}`, http.StatusNotFound)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, p)
+}
+
+func (s *Server) updateTokenPolicy(w http.ResponseWriter, r *http.Request) {
+	tokenID := r.PathValue("id")
+	policyID := r.PathValue("policy_id")
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.tokens[tokenID]; !ok {
+		http.Error(w, `{"detail":"Not found."}`, http.StatusNotFound)
+		return
+	}
+
+	p, ok := s.policies[tokenID][policyID]
+	if !ok {
+		http.Error(w, `{"detail":"Not found."}`, http.StatusNotFound)
+		return
+	}
+
+	var req struct {
+		PermWrite bool `json:"perm_write"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"detail":"Parse error."}`, http.StatusBadRequest)
+		return
+	}
+
+	p.PermWrite = req.PermWrite
+	writeJSON(w, http.StatusOK, p)
+}
+
+func (s *Server) deleteTokenPolicy(w http.ResponseWriter, r *http.Request) {
+	tokenID := r.PathValue("id")
+	policyID := r.PathValue("policy_id")
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.tokens[tokenID]; !ok {
+		// Token not found — treat as success per deSEC semantics.
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	p, ok := s.policies[tokenID][policyID]
+	if !ok {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	// Enforce: the default policy cannot be deleted while specific policies exist.
+	if isDefaultPolicy(p) {
+		for _, other := range s.policies[tokenID] {
+			if !isDefaultPolicy(other) {
+				http.Error(w, `{"detail":"Cannot delete the default policy while specific policies exist."}`, http.StatusBadRequest)
+				return
+			}
+		}
+	}
+
+	delete(s.policies[tokenID], policyID)
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ---- helpers ----
 
 // rrsetKey returns the map key for an rrset.
@@ -558,6 +959,21 @@ func domainOwnsQname(domainName, qname string) bool {
 		return true
 	}
 	return strings.HasSuffix(qname, "."+domainName)
+}
+
+// newUUID generates a random UUID (version 4) string.
+func newUUID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	b[6] = (b[6] & 0x0f) | 0x40 // version 4
+	b[8] = (b[8] & 0x3f) | 0x80 // variant bits
+	return fmt.Sprintf("%s-%s-%s-%s-%s",
+		hex.EncodeToString(b[0:4]),
+		hex.EncodeToString(b[4:6]),
+		hex.EncodeToString(b[6:8]),
+		hex.EncodeToString(b[8:10]),
+		hex.EncodeToString(b[10:]),
+	)
 }
 
 // paginate returns a page of items starting from the cursor, and the next cursor.
