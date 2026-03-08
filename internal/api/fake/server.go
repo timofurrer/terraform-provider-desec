@@ -186,6 +186,16 @@ func (s *Server) handleDomains(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 
+	case len(parts) == 3 && parts[2] == "zonefile":
+		// /domains/{name}/zonefile/
+		domainName := parts[1]
+		switch r.Method {
+		case http.MethodGet:
+			s.getZonefile(w, r, domainName)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+
 	default:
 		http.NotFound(w, r)
 	}
@@ -301,6 +311,25 @@ func (s *Server) deleteDomain(w http.ResponseWriter, _ *http.Request, name strin
 	delete(s.rrsets, name)
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) getZonefile(w http.ResponseWriter, _ *http.Request, domainName string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if _, ok := s.domains[domainName]; !ok {
+		http.Error(w, `{"detail":"Not found."}`, http.StatusNotFound)
+		return
+	}
+
+	var sb strings.Builder
+	for _, rs := range s.rrsets[domainName] {
+		fmt.Fprintf(&sb, "%s\t%d\tIN\t%s\t%s\n", rs.Name, rs.TTL, rs.Type, strings.Join(rs.Records, " "))
+	}
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(sb.String())) //nolint:errcheck
 }
 
 // ---- RRset handlers ----

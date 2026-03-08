@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 )
@@ -108,4 +109,23 @@ func (c *Client) DeleteDomain(ctx context.Context, name string) error {
 		return fmt.Errorf("deleting domain %q: %w", name, err)
 	}
 	return nil
+}
+
+// GetZonefile retrieves the zonefile for a domain.
+func (c *Client) GetZonefile(ctx context.Context, name string) (string, error) {
+	resp, err := c.do(ctx, http.MethodGet, "/domains/"+name+"/zonefile/", nil)
+	if err != nil {
+		return "", fmt.Errorf("getting zonefile for %q: %w", name, err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	if err := checkResponse(resp, http.StatusOK); err != nil {
+		return "", fmt.Errorf("getting zonefile for %q: %w", name, err)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("reading zonefile: %w", err)
+	}
+	return string(body), nil
 }

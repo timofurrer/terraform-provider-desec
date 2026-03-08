@@ -102,6 +102,7 @@ func (p *desecProvider) DataSources(_ context.Context) []func() datasource.DataS
 		newDomainsDataSource,
 		newRecordDataSource,
 		newRecordsDataSource,
+		newZonefileDataSource,
 	}
 }
 

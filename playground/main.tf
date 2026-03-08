@@ -1,3 +1,6 @@
+# Copyright (c) Timo Furrer
+# SPDX-License-Identifier: MPL-2.0
+
 terraform {
   required_providers {
     desec = {
