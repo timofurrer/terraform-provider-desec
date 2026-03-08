@@ -1,7 +1,12 @@
+GOBIN=$(shell pwd)/bin
+
 default: fmt lint install generate
 
 build:
 	go build -v ./...
+
+playground:
+	GOBIN=$(GOBIN) go install -v
 
 install: build
 	go install -v ./...
@@ -21,4 +26,4 @@ test:
 testacc:
 	TF_ACC=1 go test -v -cover -timeout 120m ./...
 
-.PHONY: fmt lint test testacc build install generate
+.PHONY: fmt lint test testacc build install generate playground
