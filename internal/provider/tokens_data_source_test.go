@@ -65,7 +65,8 @@ resource "desec_token" "alpha" {
 }
 
 resource "desec_token" "beta" {
-  name = "token-beta"
+  name       = "token-beta"
+  depends_on = [desec_token.alpha]
 }
 
 data "desec_tokens" "all" {

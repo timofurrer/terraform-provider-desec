@@ -602,9 +602,12 @@ func (s *Server) listTokens(w http.ResponseWriter, r *http.Request) {
 	for _, t := range s.tokens {
 		all = append(all, t)
 	}
-	// Sort by creation time for deterministic output.
+	// Sort by creation time, then by ID as a stable tiebreaker.
 	sort.Slice(all, func(i, j int) bool {
-		return all[i].Created < all[j].Created
+		if all[i].Created != all[j].Created {
+			return all[i].Created < all[j].Created
+		}
+		return all[i].ID < all[j].ID
 	})
 
 	result := make([]tokenResponse, 0, len(all))
