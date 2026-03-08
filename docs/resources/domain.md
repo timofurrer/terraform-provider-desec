@@ -70,3 +70,18 @@ import {
 #### Required
 
 - `name` (String) The domain name.
+
+In Terraform v1.5.0 and later, the [`import` block](https://developer.hashicorp.com/terraform/language/import) can be used with the `id` attribute, for example:
+
+```terraform
+import {
+  to = desec_domain.example
+  id = "example.com"
+}
+```
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
+```shell
+terraform import desec_domain.example example.com
+```

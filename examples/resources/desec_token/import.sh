@@ -1,0 +1,1 @@
+terraform import desec_token.ci 00000000-0000-0000-0000-000000000000

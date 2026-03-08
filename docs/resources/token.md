@@ -84,3 +84,18 @@ import {
 #### Required
 
 - `id` (String) The token's UUID.
+
+In Terraform v1.5.0 and later, the [`import` block](https://developer.hashicorp.com/terraform/language/import) can be used with the `id` attribute, for example:
+
+```terraform
+import {
+  to = desec_token.ci
+  id = "00000000-0000-0000-0000-000000000000"
+}
+```
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
+```shell
+terraform import desec_token.ci 00000000-0000-0000-0000-000000000000
+```

@@ -89,3 +89,18 @@ import {
 
 - `id` (String) The policy's UUID.
 - `token_id` (String) The UUID of the token this policy belongs to.
+
+In Terraform v1.5.0 and later, the [`import` block](https://developer.hashicorp.com/terraform/language/import) can be used with the `id` attribute, for example:
+
+```terraform
+import {
+  to = desec_token_policy.example_all
+  id = "00000000-0000-0000-0000-000000000000/11111111-1111-1111-1111-111111111111"
+}
+```
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
+```shell
+terraform import desec_token_policy.example_all 00000000-0000-0000-0000-000000000000/11111111-1111-1111-1111-111111111111
+```

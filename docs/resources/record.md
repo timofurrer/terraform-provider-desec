@@ -109,3 +109,18 @@ import {
 - `domain` (String) The domain name this record belongs to.
 - `subname` (String) The subdomain part of the record name.
 - `type` (String) The DNS record type (e.g. A, AAAA, TXT).
+
+In Terraform v1.5.0 and later, the [`import` block](https://developer.hashicorp.com/terraform/language/import) can be used with the `id` attribute, for example:
+
+```terraform
+import {
+  to = desec_record.www_a
+  id = "example.com/@/A"
+}
+```
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
+```shell
+terraform import desec_record.www_a example.com/@/A
+```
