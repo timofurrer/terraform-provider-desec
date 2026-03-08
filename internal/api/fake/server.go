@@ -67,8 +67,19 @@ func NewServer() *Server {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/domains/", s.handleDomains)
-	mux.HandleFunc("/api/v1/domains", s.handleDomains)
+	mux.Handle("GET /api/v1/domains/", s.requireAuthentication(http.HandlerFunc(s.listDomains)))
+	mux.Handle("POST /api/v1/domains/", s.requireAuthentication(http.HandlerFunc(s.createDomain)))
+	mux.Handle("GET /api/v1/domains/{name}/", s.requireAuthentication(http.HandlerFunc(s.getDomain)))
+	mux.Handle("DELETE /api/v1/domains/{name}/", s.requireAuthentication(http.HandlerFunc(s.deleteDomain)))
+	mux.Handle("GET /api/v1/domains/{name}/zonefile/", s.requireAuthentication(http.HandlerFunc(s.getZonefile)))
+	mux.Handle("GET /api/v1/domains/{name}/rrsets/", s.requireAuthentication(http.HandlerFunc(s.listRRsets)))
+	mux.Handle("POST /api/v1/domains/{name}/rrsets/", s.requireAuthentication(http.HandlerFunc(s.createRRset)))
+	mux.Handle("PATCH /api/v1/domains/{name}/rrsets/", s.requireAuthentication(http.HandlerFunc(s.bulkUpdateRRsets)))
+	mux.Handle("PUT /api/v1/domains/{name}/rrsets/", s.requireAuthentication(http.HandlerFunc(s.bulkUpdateRRsets)))
+	mux.Handle("GET /api/v1/domains/{name}/rrsets/{subname}/{type}/", s.requireAuthentication(http.HandlerFunc(s.getRRset)))
+	mux.Handle("PATCH /api/v1/domains/{name}/rrsets/{subname}/{type}/", s.requireAuthentication(http.HandlerFunc(s.updateRRset)))
+	mux.Handle("PUT /api/v1/domains/{name}/rrsets/{subname}/{type}/", s.requireAuthentication(http.HandlerFunc(s.updateRRset)))
+	mux.Handle("DELETE /api/v1/domains/{name}/rrsets/{subname}/{type}/", s.requireAuthentication(http.HandlerFunc(s.deleteRRset)))
 
 	s.srv = httptest.NewServer(mux)
 	return s
@@ -99,6 +110,16 @@ func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
+// requireAuthentication wraps a handlerFunc to enforce token authentication.
+func (s *Server) requireAuthentication(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.authenticate(w, r) {
+			return
+		}
+		next.ServeHTTP(w, r)
+	}
+}
+
 // writeJSON writes a JSON-encoded value with the given status code.
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -109,96 +130,6 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // now returns the current time in ISO 8601 format.
 func now() string {
 	return time.Now().UTC().Format(time.RFC3339Nano)
-}
-
-// handleDomains routes domain-related requests.
-func (s *Server) handleDomains(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(w, r) {
-		return
-	}
-
-	// Strip /api/v1 prefix and split path.
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1")
-	// path is now like /domains/, /domains/{name}/, /domains/{name}/rrsets/, etc.
-
-	parts := strings.Split(strings.Trim(path, "/"), "/")
-	// parts[0] = "domains"
-	// parts[1] = domain name (optional)
-	// parts[2] = "rrsets" (optional)
-	// parts[3] = subname (optional)
-	// parts[4] = type (optional)
-
-	switch {
-	case len(parts) == 1:
-		// /domains/
-		switch r.Method {
-		case http.MethodGet:
-			s.listDomains(w, r)
-		case http.MethodPost:
-			s.createDomain(w, r)
-		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		}
-
-	case len(parts) == 2:
-		// /domains/{name}/
-		domainName := parts[1]
-		switch r.Method {
-		case http.MethodGet:
-			s.getDomain(w, r, domainName)
-		case http.MethodDelete:
-			s.deleteDomain(w, r, domainName)
-		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		}
-
-	case len(parts) == 3 && parts[2] == "rrsets":
-		// /domains/{name}/rrsets/
-		domainName := parts[1]
-		switch r.Method {
-		case http.MethodGet:
-			s.listRRsets(w, r, domainName)
-		case http.MethodPost:
-			s.createRRset(w, r, domainName)
-		case http.MethodPatch, http.MethodPut:
-			s.bulkUpdateRRsets(w, r, domainName)
-		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		}
-
-	case len(parts) == 5 && parts[2] == "rrsets":
-		// /domains/{name}/rrsets/{subname}/{type}/
-		domainName := parts[1]
-		subname := parts[3]
-		rrtype := parts[4]
-		// Normalize "@" to empty string for storage.
-		if subname == "@" {
-			subname = ""
-		}
-		switch r.Method {
-		case http.MethodGet:
-			s.getRRset(w, r, domainName, subname, rrtype)
-		case http.MethodPatch, http.MethodPut:
-			s.updateRRset(w, r, domainName, subname, rrtype)
-		case http.MethodDelete:
-			s.deleteRRset(w, r, domainName, subname, rrtype)
-		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		}
-
-	case len(parts) == 3 && parts[2] == "zonefile":
-		// /domains/{name}/zonefile/
-		domainName := parts[1]
-		switch r.Method {
-		case http.MethodGet:
-			s.getZonefile(w, r, domainName)
-		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		}
-
-	default:
-		http.NotFound(w, r)
-	}
 }
 
 // ---- Domain handlers ----
@@ -291,7 +222,9 @@ func (s *Server) createDomain(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, d)
 }
 
-func (s *Server) getDomain(w http.ResponseWriter, _ *http.Request, name string) {
+func (s *Server) getDomain(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -303,7 +236,9 @@ func (s *Server) getDomain(w http.ResponseWriter, _ *http.Request, name string) 
 	writeJSON(w, http.StatusOK, d)
 }
 
-func (s *Server) deleteDomain(w http.ResponseWriter, _ *http.Request, name string) {
+func (s *Server) deleteDomain(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -313,7 +248,9 @@ func (s *Server) deleteDomain(w http.ResponseWriter, _ *http.Request, name strin
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) getZonefile(w http.ResponseWriter, _ *http.Request, domainName string) {
+func (s *Server) getZonefile(w http.ResponseWriter, r *http.Request) {
+	domainName := r.PathValue("name")
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -334,7 +271,9 @@ func (s *Server) getZonefile(w http.ResponseWriter, _ *http.Request, domainName 
 
 // ---- RRset handlers ----
 
-func (s *Server) listRRsets(w http.ResponseWriter, r *http.Request, domainName string) {
+func (s *Server) listRRsets(w http.ResponseWriter, r *http.Request) {
+	domainName := r.PathValue("name")
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -385,7 +324,9 @@ func (s *Server) listRRsets(w http.ResponseWriter, r *http.Request, domainName s
 	writeJSON(w, http.StatusOK, page)
 }
 
-func (s *Server) createRRset(w http.ResponseWriter, r *http.Request, domainName string) {
+func (s *Server) createRRset(w http.ResponseWriter, r *http.Request) {
+	domainName := r.PathValue("name")
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -432,7 +373,14 @@ func (s *Server) createRRset(w http.ResponseWriter, r *http.Request, domainName 
 	writeJSON(w, http.StatusCreated, rs)
 }
 
-func (s *Server) getRRset(w http.ResponseWriter, _ *http.Request, domainName, subname, rrtype string) {
+func (s *Server) getRRset(w http.ResponseWriter, r *http.Request) {
+	domainName := r.PathValue("name")
+	subname := r.PathValue("subname")
+	if subname == "@" {
+		subname = ""
+	}
+	rrtype := r.PathValue("type")
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -449,7 +397,14 @@ func (s *Server) getRRset(w http.ResponseWriter, _ *http.Request, domainName, su
 	writeJSON(w, http.StatusOK, rs)
 }
 
-func (s *Server) updateRRset(w http.ResponseWriter, r *http.Request, domainName, subname, rrtype string) {
+func (s *Server) updateRRset(w http.ResponseWriter, r *http.Request) {
+	domainName := r.PathValue("name")
+	subname := r.PathValue("subname")
+	if subname == "@" {
+		subname = ""
+	}
+	rrtype := r.PathValue("type")
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -490,7 +445,14 @@ func (s *Server) updateRRset(w http.ResponseWriter, r *http.Request, domainName,
 	writeJSON(w, http.StatusOK, rs)
 }
 
-func (s *Server) deleteRRset(w http.ResponseWriter, _ *http.Request, domainName, subname, rrtype string) {
+func (s *Server) deleteRRset(w http.ResponseWriter, r *http.Request) {
+	domainName := r.PathValue("name")
+	subname := r.PathValue("subname")
+	if subname == "@" {
+		subname = ""
+	}
+	rrtype := r.PathValue("type")
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -503,7 +465,9 @@ func (s *Server) deleteRRset(w http.ResponseWriter, _ *http.Request, domainName,
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) bulkUpdateRRsets(w http.ResponseWriter, r *http.Request, domainName string) {
+func (s *Server) bulkUpdateRRsets(w http.ResponseWriter, r *http.Request) {
+	domainName := r.PathValue("name")
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
