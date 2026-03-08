@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/ephemeral"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -17,6 +18,7 @@ import (
 
 // Ensure DesecProvider satisfies the provider interface.
 var _ provider.Provider = (*desecProvider)(nil)
+var _ provider.ProviderWithEphemeralResources = (*desecProvider)(nil)
 
 // desecProvider defines the provider implementation.
 type desecProvider struct {
@@ -87,6 +89,7 @@ func (p *desecProvider) Configure(ctx context.Context, req provider.ConfigureReq
 	client := api.NewClient(apiURL, apiToken)
 	resp.DataSourceData = client
 	resp.ResourceData = client
+	resp.EphemeralResourceData = client
 }
 
 func (p *desecProvider) Resources(_ context.Context) []func() resource.Resource {
@@ -95,6 +98,12 @@ func (p *desecProvider) Resources(_ context.Context) []func() resource.Resource 
 		newRecordResource,
 		newTokenResource,
 		newTokenPolicyResource,
+	}
+}
+
+func (p *desecProvider) EphemeralResources(_ context.Context) []func() ephemeral.EphemeralResource {
+	return []func() ephemeral.EphemeralResource{
+		newTokenEphemeralResource,
 	}
 }
 
