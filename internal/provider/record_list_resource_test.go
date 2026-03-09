@@ -81,6 +81,7 @@ list "desec_record" "all" {
   provider = desec
   config {
     domain = %q
+    type   = "A"
   }
 }
 `, domain)

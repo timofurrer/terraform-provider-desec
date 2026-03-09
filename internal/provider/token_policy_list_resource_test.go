@@ -14,6 +14,7 @@ import (
 )
 
 func TestAccTokenPolicyListResource(t *testing.T) {
+	domainName := testAccDomainName(t, "policy-list")
 	providerConfig, factories := newTestAccEnv(t)
 
 	resource.Test(t, resource.TestCase{
@@ -25,7 +26,7 @@ func TestAccTokenPolicyListResource(t *testing.T) {
 		Steps: []resource.TestStep{
 			// Create token + policies, then query the list resource.
 			{
-				Config: testAccTokenPolicyListResourceConfig(providerConfig),
+				Config: testAccTokenPolicyListResourceConfig(providerConfig, domainName),
 			},
 			{
 				Query:  true,
@@ -43,9 +44,13 @@ func TestAccTokenPolicyListResource(t *testing.T) {
 	})
 }
 
-func testAccTokenPolicyListResourceConfig(providerConfig string) string {
+func testAccTokenPolicyListResourceConfig(providerConfig, domainName string) string {
 	return fmt.Sprintf(`
 %s
+
+resource "desec_domain" "test" {
+  name = %q
+}
 
 resource "desec_token" "test" {
   name = "policy-list-test"
@@ -57,11 +62,11 @@ resource "desec_token_policy" "default" {
 
 resource "desec_token_policy" "specific" {
   token_id   = desec_token.test.id
-  domain     = "example.com"
+  domain     = desec_domain.test.name
   perm_write = true
   depends_on = [desec_token_policy.default]
 }
-`, providerConfig)
+`, providerConfig, domainName)
 }
 
 func testAccTokenPolicyListQueryConfig(providerConfig string) string {

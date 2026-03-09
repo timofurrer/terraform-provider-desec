@@ -31,7 +31,6 @@ func TestAccTokenListResource(t *testing.T) {
 				Query:  true,
 				Config: testAccTokenListQueryConfig(providerConfig),
 				QueryResultChecks: []querycheck.QueryResultCheck{
-					querycheck.ExpectLength("desec_token.all", 2),
 					querycheck.ExpectIdentity("desec_token.all", map[string]knownvalue.Check{
 						"id": knownvalue.NotNull(),
 					}),

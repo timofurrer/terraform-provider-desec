@@ -23,17 +23,12 @@ func TestAccTokensDataSource(t *testing.T) {
 			{
 				Config: testAccTokensDataSourceConfig(providerConfig),
 				ConfigStateChecks: []statecheck.StateCheck{
-					statecheck.ExpectKnownValue(
-						"data.desec_tokens.all",
-						tfjsonpath.New("tokens"),
-						knownvalue.ListSizeExact(2),
-					),
-					// First token object has the expected name.
-					statecheck.ExpectKnownValue(
-						"data.desec_tokens.all",
-						tfjsonpath.New("tokens").AtSliceIndex(0).AtMapKey("name"),
-						knownvalue.StringExact("token-alpha"),
-					),
+					// Do not assert an exact list size: a real account may have
+					// additional tokens (e.g. the bootstrap auth token). Instead,
+					// verify that both created tokens appear somewhere in the list.
+					tokenListContains("data.desec_tokens.all", "token-alpha"),
+					tokenListContains("data.desec_tokens.all", "token-beta"),
+					// Spot-check structural attributes on the first element.
 					statecheck.ExpectKnownValue(
 						"data.desec_tokens.all",
 						tfjsonpath.New("tokens").AtSliceIndex(0).AtMapKey("is_valid"),
@@ -43,12 +38,6 @@ func TestAccTokensDataSource(t *testing.T) {
 						"data.desec_tokens.all",
 						tfjsonpath.New("tokens").AtSliceIndex(0).AtMapKey("allowed_subnets"),
 						knownvalue.NotNull(),
-					),
-					// Second token.
-					statecheck.ExpectKnownValue(
-						"data.desec_tokens.all",
-						tfjsonpath.New("tokens").AtSliceIndex(1).AtMapKey("name"),
-						knownvalue.StringExact("token-beta"),
 					),
 				},
 			},

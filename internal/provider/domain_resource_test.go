@@ -58,6 +58,11 @@ func TestAccDomainResource(t *testing.T) {
 				ResourceName:      "desec_domain.test",
 				ImportState:       true,
 				ImportStateVerify: true,
+				// published and touched are volatile server-side timestamps that
+				// can change asynchronously between Create and a subsequent Read
+				// (e.g. deSEC publishes the initial SOA/NS records shortly after
+				// domain creation). Ignore them during ImportStateVerify.
+				ImportStateVerifyIgnore: []string{"published", "touched"},
 			},
 		},
 	})

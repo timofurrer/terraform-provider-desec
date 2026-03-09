@@ -110,10 +110,16 @@ func (r *domainResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"published": schema.StringAttribute{
 				MarkdownDescription: "Timestamp of when the domain's DNS records were last published.",
 				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"touched": schema.StringAttribute{
 				MarkdownDescription: "Timestamp of when the domain's DNS records were last touched.",
 				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"keys": schema.ListNestedAttribute{
 				MarkdownDescription: "DNSSEC public key information for the domain.",

@@ -4,7 +4,9 @@
 package provider
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/echoprovider"
@@ -12,6 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
+	"github.com/timofurrer/terraform-provider-desec/internal/api"
 )
 
 func TestAccTokenEphemeralResource(t *testing.T) {
@@ -54,6 +57,37 @@ func TestAccTokenEphemeralResource(t *testing.T) {
 func TestAccTokenEphemeralResourceKeepOnClose(t *testing.T) {
 	providerConfig, factories := newTestAccEnv(t)
 	factories["echo"] = echoprovider.NewProviderServer()
+
+	// When running against the real API, the ephemeral resource intentionally
+	// leaves the token alive (keep_on_close = true). Clean it up after the test
+	// so it does not accumulate on the account across runs.
+	if useRealAPI() {
+		t.Cleanup(func() {
+			apiToken := os.Getenv("DESEC_API_TOKEN")
+			apiURL := os.Getenv("DESEC_API_URL")
+			if apiURL == "" {
+				apiURL = api.DefaultBaseURL
+			}
+			c := api.NewClient(apiURL, apiToken)
+			tokens, err := c.ListTokens(context.Background())
+			if err != nil {
+				t.Logf("kept-token cleanup: ListTokens error: %v", err)
+				return
+			}
+			found := false
+			for _, tok := range tokens {
+				if tok.Name == "kept-token" {
+					found = true
+					if err := c.DeleteToken(context.Background(), tok.ID); err != nil {
+						t.Logf("kept-token cleanup: DeleteToken(%s) error: %v", tok.ID, err)
+					}
+				}
+			}
+			if !found {
+				t.Logf("kept-token cleanup: no token named \"kept-token\" found (already gone?)")
+			}
+		})
+	}
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
