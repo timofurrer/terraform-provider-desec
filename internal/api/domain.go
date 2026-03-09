@@ -10,19 +10,42 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+
+	"github.com/google/go-querystring/query"
 )
 
+// Key represents a DNSSEC public key associated with a domain.
+type Key struct {
+	DNSKey  string   `json:"dnskey"`
+	DS      []string `json:"ds"`
+	Managed bool     `json:"managed"`
+}
+
+// Domain represents a DNS zone managed by deSEC.
+type Domain struct {
+	Created    string `json:"created"`
+	Keys       []Key  `json:"keys,omitempty"`
+	MinimumTTL int    `json:"minimum_ttl"`
+	Name       string `json:"name"`
+	Published  string `json:"published"`
+	Touched    string `json:"touched"`
+}
+
+// CreateDomainOptions are the body parameters for CreateDomain.
+type CreateDomainOptions struct {
+	Name string `json:"name"`
+}
+
 // CreateDomain creates a new domain (DNS zone) in deSEC.
-func (c *Client) CreateDomain(ctx context.Context, name string) (*Domain, error) {
-	body := map[string]string{"name": name}
-	resp, err := c.do(ctx, http.MethodPost, "/domains/", body)
+func (c *Client) CreateDomain(ctx context.Context, opts CreateDomainOptions) (*Domain, error) {
+	resp, err := c.do(ctx, http.MethodPost, "/domains/", opts)
 	if err != nil {
-		return nil, fmt.Errorf("creating domain %q: %w", name, err)
+		return nil, fmt.Errorf("creating domain %q: %w", opts.Name, err)
 	}
 	defer resp.Body.Close() //nolint:errcheck
 
 	if err := checkResponse(resp, http.StatusCreated); err != nil {
-		return nil, fmt.Errorf("creating domain %q: %w", name, err)
+		return nil, fmt.Errorf("creating domain %q: %w", opts.Name, err)
 	}
 
 	var domain Domain
@@ -51,12 +74,25 @@ func (c *Client) GetDomain(ctx context.Context, name string) (*Domain, error) {
 	return &domain, nil
 }
 
-// ListDomains retrieves all domains. If ownsQname is non-empty, only the domain
+// ListDomainsOptions are the optional parameters for ListDomains.
+type ListDomainsOptions struct {
+	// OwnsQname, when non-nil, filters the result to the single domain
+	// responsible for that DNS query name.
+	OwnsQname *string `url:"owns_qname,omitempty"`
+}
+
+// ListDomains retrieves all domains. If opts.OwnsQname is set, only the domain
 // responsible for that DNS name is returned.
-func (c *Client) ListDomains(ctx context.Context, ownsQname string) ([]Domain, error) {
-	path := "/domains/"
-	if ownsQname != "" {
-		path += "?owns_qname=" + url.QueryEscape(ownsQname)
+func (c *Client) ListDomains(ctx context.Context, opts ListDomainsOptions) ([]Domain, error) {
+	params, err := query.Values(opts)
+	if err != nil {
+		return nil, fmt.Errorf("encoding list domains query params: %w", err)
+	}
+
+	basePath := "/domains/"
+	queryStr := ""
+	if len(params) > 0 {
+		queryStr = "?" + params.Encode()
 	}
 
 	var allDomains []Domain
@@ -66,9 +102,9 @@ func (c *Client) ListDomains(ctx context.Context, ownsQname string) ([]Domain, e
 	for firstPage || cursor != "" {
 		firstPage = false
 
-		pagePath := path
+		pagePath := basePath + queryStr
 		if cursor != "" {
-			if ownsQname != "" {
+			if queryStr != "" {
 				pagePath += "&cursor=" + url.QueryEscape(cursor)
 			} else {
 				pagePath += "?cursor=" + url.QueryEscape(cursor)

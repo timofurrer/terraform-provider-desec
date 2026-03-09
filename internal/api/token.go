@@ -11,41 +11,59 @@ import (
 	"net/url"
 )
 
-// tokenRequest is the JSON body for creating or updating a token.
-type tokenRequest struct {
+// Token represents a deSEC API authentication token.
+type Token struct {
+	ID               string   `json:"id"`
+	Created          string   `json:"created"`
+	LastUsed         *string  `json:"last_used"`
+	Owner            string   `json:"owner"`
+	UserOverride     *string  `json:"user_override"`
+	MFA              *bool    `json:"mfa"`
+	MaxAge           *string  `json:"max_age"`
+	MaxUnusedPeriod  *string  `json:"max_unused_period"`
 	Name             string   `json:"name"`
 	PermCreateDomain bool     `json:"perm_create_domain"`
 	PermDeleteDomain bool     `json:"perm_delete_domain"`
 	PermManageTokens bool     `json:"perm_manage_tokens"`
 	AllowedSubnets   []string `json:"allowed_subnets"`
 	AutoPolicy       bool     `json:"auto_policy"`
-	MaxAge           *string  `json:"max_age"`
-	MaxUnusedPeriod  *string  `json:"max_unused_period"`
+	IsValid          bool     `json:"is_valid"`
+	// Secret is the token's secret value. Only present in the create response;
+	// subsequent GET requests do not return it.
+	Secret string `json:"token,omitempty"`
+}
+
+// CreateTokenOptions are the body parameters for CreateToken.
+// Fields are omitted from the request when nil, allowing the API to apply its defaults.
+type CreateTokenOptions struct {
+	Name             *string  `json:"name,omitempty"`
+	PermCreateDomain *bool    `json:"perm_create_domain,omitempty"`
+	PermDeleteDomain *bool    `json:"perm_delete_domain,omitempty"`
+	PermManageTokens *bool    `json:"perm_manage_tokens,omitempty"`
+	AllowedSubnets   []string `json:"allowed_subnets,omitempty"`
+	AutoPolicy       *bool    `json:"auto_policy,omitempty"`
+	MaxAge           *string  `json:"max_age,omitempty"`
+	MaxUnusedPeriod  *string  `json:"max_unused_period,omitempty"`
+}
+
+// UpdateTokenOptions are the body parameters for UpdateToken.
+// Fields are omitted from the request when nil, allowing the API to apply its defaults.
+type UpdateTokenOptions struct {
+	Name             *string  `json:"name,omitempty"`
+	PermCreateDomain *bool    `json:"perm_create_domain,omitempty"`
+	PermDeleteDomain *bool    `json:"perm_delete_domain,omitempty"`
+	PermManageTokens *bool    `json:"perm_manage_tokens,omitempty"`
+	AllowedSubnets   []string `json:"allowed_subnets,omitempty"`
+	AutoPolicy       *bool    `json:"auto_policy,omitempty"`
+	MaxAge           *string  `json:"max_age,omitempty"`
+	MaxUnusedPeriod  *string  `json:"max_unused_period,omitempty"`
 }
 
 // CreateToken creates a new API token with the given configuration.
 // The returned Token includes the secret value in the Secret field,
 // which is only available at creation time.
-func (c *Client) CreateToken(
-	ctx context.Context,
-	name string,
-	permCreateDomain, permDeleteDomain, permManageTokens bool,
-	allowedSubnets []string,
-	autoPolicy bool,
-	maxAge, maxUnusedPeriod *string,
-) (*Token, error) {
-	body := tokenRequest{
-		Name:             name,
-		PermCreateDomain: permCreateDomain,
-		PermDeleteDomain: permDeleteDomain,
-		PermManageTokens: permManageTokens,
-		AllowedSubnets:   allowedSubnets,
-		AutoPolicy:       autoPolicy,
-		MaxAge:           maxAge,
-		MaxUnusedPeriod:  maxUnusedPeriod,
-	}
-
-	resp, err := c.do(ctx, http.MethodPost, "/auth/tokens/", body)
+func (c *Client) CreateToken(ctx context.Context, opts CreateTokenOptions) (*Token, error) {
+	resp, err := c.do(ctx, http.MethodPost, "/auth/tokens/", opts)
 	if err != nil {
 		return nil, fmt.Errorf("creating token: %w", err)
 	}
@@ -120,27 +138,8 @@ func (c *Client) ListTokens(ctx context.Context) ([]Token, error) {
 
 // UpdateToken modifies an existing token by its ID.
 // Note: the response does not include the token's secret value.
-func (c *Client) UpdateToken(
-	ctx context.Context,
-	id string,
-	name string,
-	permCreateDomain, permDeleteDomain, permManageTokens bool,
-	allowedSubnets []string,
-	autoPolicy bool,
-	maxAge, maxUnusedPeriod *string,
-) (*Token, error) {
-	body := tokenRequest{
-		Name:             name,
-		PermCreateDomain: permCreateDomain,
-		PermDeleteDomain: permDeleteDomain,
-		PermManageTokens: permManageTokens,
-		AllowedSubnets:   allowedSubnets,
-		AutoPolicy:       autoPolicy,
-		MaxAge:           maxAge,
-		MaxUnusedPeriod:  maxUnusedPeriod,
-	}
-
-	resp, err := c.do(ctx, http.MethodPatch, "/auth/tokens/"+url.PathEscape(id)+"/", body)
+func (c *Client) UpdateToken(ctx context.Context, id string, opts UpdateTokenOptions) (*Token, error) {
+	resp, err := c.do(ctx, http.MethodPatch, "/auth/tokens/"+url.PathEscape(id)+"/", opts)
 	if err != nil {
 		return nil, fmt.Errorf("updating token %q: %w", id, err)
 	}

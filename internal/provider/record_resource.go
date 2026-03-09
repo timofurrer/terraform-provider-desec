@@ -164,10 +164,12 @@ func (r *recordResource) Create(ctx context.Context, req resource.CreateRequest,
 
 	rrset, err := r.client.CreateRRset(ctx,
 		data.Domain.ValueString(),
-		data.Subname.ValueString(),
-		data.Type.ValueString(),
-		int(data.TTL.ValueInt64()),
-		records,
+		api.CreateRRsetOptions{
+			Subname: data.Subname.ValueString(),
+			Type:    data.Type.ValueString(),
+			TTL:     int(data.TTL.ValueInt64()),
+			Records: records,
+		},
 	)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Creating Record",
@@ -242,8 +244,10 @@ func (r *recordResource) Update(ctx context.Context, req resource.UpdateRequest,
 		data.Domain.ValueString(),
 		data.Subname.ValueString(),
 		data.Type.ValueString(),
-		int(data.TTL.ValueInt64()),
-		records,
+		api.UpdateRRsetOptions{
+			TTL:     int(data.TTL.ValueInt64()),
+			Records: records,
+		},
 	)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Updating Record",

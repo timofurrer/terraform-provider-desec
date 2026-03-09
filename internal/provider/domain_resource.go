@@ -165,7 +165,7 @@ func (r *domainResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	domain, err := r.client.CreateDomain(ctx, data.Name.ValueString())
+	domain, err := r.client.CreateDomain(ctx, api.CreateDomainOptions{Name: data.Name.ValueString()})
 	if err != nil {
 		resp.Diagnostics.AddError("Error Creating Domain", fmt.Sprintf("Unable to create domain %q: %s", data.Name.ValueString(), err))
 		return

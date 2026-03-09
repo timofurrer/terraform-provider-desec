@@ -71,12 +71,11 @@ func (r *domainListResource) List(ctx context.Context, req list.ListRequest, str
 
 	req.Config.Get(ctx, &config)
 
-	var ownsQname string
-	if !config.OwnsQname.IsNull() && !config.OwnsQname.IsUnknown() {
-		ownsQname = config.OwnsQname.ValueString()
+	opts := api.ListDomainsOptions{
+		OwnsQname: nullableString(config.OwnsQname),
 	}
 
-	domains, err := r.client.ListDomains(ctx, ownsQname)
+	domains, err := r.client.ListDomains(ctx, opts)
 	if err != nil {
 		stream.Results = list.ListResultsStreamDiagnostics(diag.Diagnostics{
 			diag.NewErrorDiagnostic("Error Listing Domains",

@@ -1,0 +1,26 @@
+// Copyright (c) Timo Furrer
+// SPDX-License-Identifier: MPL-2.0
+
+package provider
+
+import "github.com/hashicorp/terraform-plugin-framework/types"
+
+// nullableString converts a types.String to a *string suitable for API calls.
+// Null or unknown values become nil.
+func nullableString(s types.String) *string {
+	if s.IsNull() || s.IsUnknown() {
+		return nil
+	}
+	v := s.ValueString()
+	return &v
+}
+
+// nullableBool converts a types.Bool to a *bool suitable for API calls.
+// Null or unknown values become nil.
+func nullableBool(b types.Bool) *bool {
+	if b.IsNull() || b.IsUnknown() {
+		return nil
+	}
+	v := b.ValueBool()
+	return &v
+}

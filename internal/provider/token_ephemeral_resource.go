@@ -164,17 +164,16 @@ func (r *tokenEphemeralResource) Open(ctx context.Context, req ephemeral.OpenReq
 		return
 	}
 
-	token, err := r.client.CreateToken(
-		ctx,
-		data.Name.ValueString(),
-		data.PermCreateDomain.ValueBool(),
-		data.PermDeleteDomain.ValueBool(),
-		data.PermManageTokens.ValueBool(),
-		allowedSubnets,
-		data.AutoPolicy.ValueBool(),
-		nullableString(data.MaxAge),
-		nullableString(data.MaxUnusedPeriod),
-	)
+	token, err := r.client.CreateToken(ctx, api.CreateTokenOptions{
+		Name:             nullableString(data.Name),
+		PermCreateDomain: nullableBool(data.PermCreateDomain),
+		PermDeleteDomain: nullableBool(data.PermDeleteDomain),
+		PermManageTokens: nullableBool(data.PermManageTokens),
+		AllowedSubnets:   allowedSubnets,
+		AutoPolicy:       nullableBool(data.AutoPolicy),
+		MaxAge:           nullableString(data.MaxAge),
+		MaxUnusedPeriod:  nullableString(data.MaxUnusedPeriod),
+	})
 	if err != nil {
 		resp.Diagnostics.AddError("Error Creating Ephemeral Token", fmt.Sprintf("Unable to create token: %s", err))
 		return

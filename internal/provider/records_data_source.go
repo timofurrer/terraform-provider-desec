@@ -123,16 +123,12 @@ func (d *recordsDataSource) Read(ctx context.Context, req datasource.ReadRequest
 		return
 	}
 
-	subname := ""
-	if !data.Subname.IsNull() && !data.Subname.IsUnknown() {
-		subname = data.Subname.ValueString()
-	}
-	rrtype := ""
-	if !data.Type.IsNull() && !data.Type.IsUnknown() {
-		rrtype = data.Type.ValueString()
+	opts := api.ListRRsetsOptions{
+		Subname: nullableString(data.Subname),
+		Type:    nullableString(data.Type),
 	}
 
-	rrsets, err := d.client.ListRRsets(ctx, data.Domain.ValueString(), subname, rrtype)
+	rrsets, err := d.client.ListRRsets(ctx, data.Domain.ValueString(), opts)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Listing Records",
 			fmt.Sprintf("Unable to list records for domain %q: %s", data.Domain.ValueString(), err))

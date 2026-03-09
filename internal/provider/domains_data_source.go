@@ -100,12 +100,11 @@ func (d *domainsDataSource) Read(ctx context.Context, req datasource.ReadRequest
 		return
 	}
 
-	ownsQname := ""
-	if !data.OwnsQname.IsNull() && !data.OwnsQname.IsUnknown() {
-		ownsQname = data.OwnsQname.ValueString()
+	opts := api.ListDomainsOptions{
+		OwnsQname: nullableString(data.OwnsQname),
 	}
 
-	domains, err := d.client.ListDomains(ctx, ownsQname)
+	domains, err := d.client.ListDomains(ctx, opts)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Listing Domains", fmt.Sprintf("Unable to list domains: %s", err))
 		return

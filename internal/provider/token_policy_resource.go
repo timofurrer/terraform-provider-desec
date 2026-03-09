@@ -147,13 +147,14 @@ func (r *tokenPolicyResource) Create(ctx context.Context, req resource.CreateReq
 		return
 	}
 
-	policy, err := r.client.CreateTokenPolicy(
-		ctx,
+	policy, err := r.client.CreateTokenPolicy(ctx,
 		data.TokenID.ValueString(),
-		nullableString(data.Domain),
-		nullableString(data.Subname),
-		nullableString(data.Type),
-		data.PermWrite.ValueBool(),
+		api.CreateTokenPolicyOptions{
+			Domain:    nullableString(data.Domain),
+			Subname:   nullableString(data.Subname),
+			Type:      nullableString(data.Type),
+			PermWrite: data.PermWrite.ValueBool(),
+		},
 	)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Creating Token Policy",
@@ -211,11 +212,12 @@ func (r *tokenPolicyResource) Update(ctx context.Context, req resource.UpdateReq
 		return
 	}
 
-	policy, err := r.client.UpdateTokenPolicy(
-		ctx,
+	policy, err := r.client.UpdateTokenPolicy(ctx,
 		state.TokenID.ValueString(),
 		state.ID.ValueString(),
-		data.PermWrite.ValueBool(),
+		api.UpdateTokenPolicyOptions{
+			PermWrite: data.PermWrite.ValueBool(),
+		},
 	)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Updating Token Policy",

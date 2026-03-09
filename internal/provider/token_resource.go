@@ -204,17 +204,16 @@ func (r *tokenResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	token, err := r.client.CreateToken(
-		ctx,
-		data.Name.ValueString(),
-		data.PermCreateDomain.ValueBool(),
-		data.PermDeleteDomain.ValueBool(),
-		data.PermManageTokens.ValueBool(),
-		allowedSubnets,
-		data.AutoPolicy.ValueBool(),
-		nullableString(data.MaxAge),
-		nullableString(data.MaxUnusedPeriod),
-	)
+	token, err := r.client.CreateToken(ctx, api.CreateTokenOptions{
+		Name:             nullableString(data.Name),
+		PermCreateDomain: nullableBool(data.PermCreateDomain),
+		PermDeleteDomain: nullableBool(data.PermDeleteDomain),
+		PermManageTokens: nullableBool(data.PermManageTokens),
+		AllowedSubnets:   allowedSubnets,
+		AutoPolicy:       nullableBool(data.AutoPolicy),
+		MaxAge:           nullableString(data.MaxAge),
+		MaxUnusedPeriod:  nullableString(data.MaxUnusedPeriod),
+	})
 	if err != nil {
 		resp.Diagnostics.AddError("Error Creating Token", fmt.Sprintf("Unable to create token: %s", err))
 		return
@@ -280,18 +279,16 @@ func (r *tokenResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 
-	token, err := r.client.UpdateToken(
-		ctx,
-		state.ID.ValueString(),
-		data.Name.ValueString(),
-		data.PermCreateDomain.ValueBool(),
-		data.PermDeleteDomain.ValueBool(),
-		data.PermManageTokens.ValueBool(),
-		allowedSubnets,
-		data.AutoPolicy.ValueBool(),
-		nullableString(data.MaxAge),
-		nullableString(data.MaxUnusedPeriod),
-	)
+	token, err := r.client.UpdateToken(ctx, state.ID.ValueString(), api.UpdateTokenOptions{
+		Name:             nullableString(data.Name),
+		PermCreateDomain: nullableBool(data.PermCreateDomain),
+		PermDeleteDomain: nullableBool(data.PermDeleteDomain),
+		PermManageTokens: nullableBool(data.PermManageTokens),
+		AllowedSubnets:   allowedSubnets,
+		AutoPolicy:       nullableBool(data.AutoPolicy),
+		MaxAge:           nullableString(data.MaxAge),
+		MaxUnusedPeriod:  nullableString(data.MaxUnusedPeriod),
+	})
 	if err != nil {
 		resp.Diagnostics.AddError("Error Updating Token", fmt.Sprintf("Unable to update token %q: %s", state.ID.ValueString(), err))
 		return
@@ -387,14 +384,4 @@ func subnetsFromList(ctx context.Context, l types.List) ([]string, diag.Diagnost
 	var subnets []string
 	diags := l.ElementsAs(ctx, &subnets, false)
 	return subnets, diags
-}
-
-// nullableString converts a types.String to a *string suitable for API calls.
-// Null or unknown values become nil.
-func nullableString(s types.String) *string {
-	if s.IsNull() || s.IsUnknown() {
-		return nil
-	}
-	v := s.ValueString()
-	return &v
 }

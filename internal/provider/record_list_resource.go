@@ -81,15 +81,12 @@ func (r *recordListResource) List(ctx context.Context, req list.ListRequest, str
 
 	req.Config.Get(ctx, &config)
 
-	var subname, rrtype string
-	if !config.Subname.IsNull() && !config.Subname.IsUnknown() {
-		subname = config.Subname.ValueString()
-	}
-	if !config.Type.IsNull() && !config.Type.IsUnknown() {
-		rrtype = config.Type.ValueString()
+	opts := api.ListRRsetsOptions{
+		Subname: nullableString(config.Subname),
+		Type:    nullableString(config.Type),
 	}
 
-	rrsets, err := r.client.ListRRsets(ctx, config.Domain.ValueString(), subname, rrtype)
+	rrsets, err := r.client.ListRRsets(ctx, config.Domain.ValueString(), opts)
 	if err != nil {
 		stream.Results = list.ListResultsStreamDiagnostics(diag.Diagnostics{
 			diag.NewErrorDiagnostic("Error Listing Records",
