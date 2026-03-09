@@ -69,7 +69,10 @@ func (r *domainListResource) List(ctx context.Context, req list.ListRequest, str
 	var config domainListConfigModel
 	stream.Results = list.NoListResults
 
-	req.Config.Get(ctx, &config)
+	if diags := req.Config.Get(ctx, &config); diags.HasError() {
+		stream.Results = list.ListResultsStreamDiagnostics(diags)
+		return
+	}
 
 	opts := api.ListDomainsOptions{
 		OwnsQname: nullableString(config.OwnsQname),

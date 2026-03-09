@@ -79,7 +79,10 @@ func (r *recordListResource) List(ctx context.Context, req list.ListRequest, str
 	var config recordListConfigModel
 	stream.Results = list.NoListResults
 
-	req.Config.Get(ctx, &config)
+	if diags := req.Config.Get(ctx, &config); diags.HasError() {
+		stream.Results = list.ListResultsStreamDiagnostics(diags)
+		return
+	}
 
 	opts := api.ListRRsetsOptions{
 		Subname: nullableString(config.Subname),
@@ -97,7 +100,6 @@ func (r *recordListResource) List(ctx context.Context, req list.ListRequest, str
 
 	stream.Results = func(push func(list.ListResult) bool) {
 		for _, rrset := range rrsets {
-
 			result := req.NewListResult(ctx)
 
 			var model recordResourceModel

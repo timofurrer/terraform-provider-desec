@@ -4,6 +4,7 @@
 package api
 
 import (
+	"net/url"
 	"regexp"
 )
 
@@ -21,5 +22,9 @@ func parseCursorNext(linkHeader string) string {
 	if len(m) < 2 {
 		return ""
 	}
-	return m[1]
+	decoded, err := url.QueryUnescape(m[1])
+	if err != nil {
+		return m[1]
+	}
+	return decoded
 }

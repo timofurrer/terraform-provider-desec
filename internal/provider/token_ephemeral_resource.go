@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/ephemeral"
 	ephemerals "github.com/hashicorp/terraform-plugin-framework/ephemeral/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -64,11 +64,11 @@ func (r *tokenEphemeralResource) Schema(_ context.Context, _ ephemeral.SchemaReq
 		MarkdownDescription: "Creates a short-lived deSEC API token on open and, by default, deletes it on close. Use `keep_on_close = true` to retain the token after Terraform finishes.",
 
 		Attributes: map[string]ephemerals.Attribute{
-			"id": schema.StringAttribute{
+			"id": ephemerals.StringAttribute{
 				MarkdownDescription: "The token's UUID.",
 				Computed:            true,
 			},
-			"name": schema.StringAttribute{
+			"name": ephemerals.StringAttribute{
 				MarkdownDescription: "Human-readable token name for reference purposes. Maximum 178 characters.",
 				Optional:            true,
 				Computed:            true,
@@ -78,57 +78,57 @@ func (r *tokenEphemeralResource) Schema(_ context.Context, _ ephemeral.SchemaReq
 				Computed:            true,
 				Sensitive:           true,
 			},
-			"created": schema.StringAttribute{
+			"created": ephemerals.StringAttribute{
 				MarkdownDescription: "Timestamp of token creation in ISO 8601 format.",
 				Computed:            true,
 			},
-			"last_used": schema.StringAttribute{
+			"last_used": ephemerals.StringAttribute{
 				MarkdownDescription: "Timestamp of when the token was last used, or `null` if it has never been used.",
 				Computed:            true,
 			},
-			"owner": schema.StringAttribute{
+			"owner": ephemerals.StringAttribute{
 				MarkdownDescription: "Email address of the deSEC account that owns this token.",
 				Computed:            true,
 			},
-			"is_valid": schema.BoolAttribute{
+			"is_valid": ephemerals.BoolAttribute{
 				MarkdownDescription: "Whether the token is currently valid (not expired).",
 				Computed:            true,
 			},
-			"perm_create_domain": schema.BoolAttribute{
+			"perm_create_domain": ephemerals.BoolAttribute{
 				MarkdownDescription: "Whether this token may create new domains.",
 				Optional:            true,
 				Computed:            true,
 			},
-			"perm_delete_domain": schema.BoolAttribute{
+			"perm_delete_domain": ephemerals.BoolAttribute{
 				MarkdownDescription: "Whether this token may delete domains.",
 				Optional:            true,
 				Computed:            true,
 			},
-			"perm_manage_tokens": schema.BoolAttribute{
+			"perm_manage_tokens": ephemerals.BoolAttribute{
 				MarkdownDescription: "Whether this token may manage tokens (list, create, modify, delete).",
 				Optional:            true,
 				Computed:            true,
 			},
-			"allowed_subnets": schema.ListAttribute{
+			"allowed_subnets": ephemerals.ListAttribute{
 				MarkdownDescription: "List of IP addresses or CIDR subnets that may authenticate using this token. Defaults to `[\"0.0.0.0/0\", \"::/0\"]` (unrestricted).",
 				Optional:            true,
 				Computed:            true,
 				ElementType:         types.StringType,
 			},
-			"auto_policy": schema.BoolAttribute{
+			"auto_policy": ephemerals.BoolAttribute{
 				MarkdownDescription: "When `true`, automatically creates a permissive scoping policy for each domain created with this token.",
 				Optional:            true,
 				Computed:            true,
 			},
-			"max_age": schema.StringAttribute{
+			"max_age": ephemerals.StringAttribute{
 				MarkdownDescription: "Maximum token lifetime as a duration string (e.g. `\"365 00:00:00\"`). Set to `null` for no age limit.",
 				Optional:            true,
 			},
-			"max_unused_period": schema.StringAttribute{
+			"max_unused_period": ephemerals.StringAttribute{
 				MarkdownDescription: "Maximum allowed period of disuse before the token is invalidated (e.g. `\"30 00:00:00\"`). Set to `null` for no limit.",
 				Optional:            true,
 			},
-			"keep_on_close": schema.BoolAttribute{
+			"keep_on_close": ephemerals.BoolAttribute{
 				MarkdownDescription: "When `true`, the token is not deleted when Terraform closes the ephemeral resource. Defaults to `false`.",
 				Optional:            true,
 			},
@@ -179,45 +179,10 @@ func (r *tokenEphemeralResource) Open(ctx context.Context, req ephemeral.OpenReq
 		return
 	}
 
-	data.ID = types.StringValue(token.ID)
-	data.Name = types.StringValue(token.Name)
-	data.Created = types.StringValue(token.Created)
-	data.Owner = types.StringValue(token.Owner)
-	data.IsValid = types.BoolValue(token.IsValid)
-	data.PermCreateDomain = types.BoolValue(token.PermCreateDomain)
-	data.PermDeleteDomain = types.BoolValue(token.PermDeleteDomain)
-	data.PermManageTokens = types.BoolValue(token.PermManageTokens)
-	data.AutoPolicy = types.BoolValue(token.AutoPolicy)
-
-	if token.LastUsed != nil {
-		data.LastUsed = types.StringValue(*token.LastUsed)
-	} else {
-		data.LastUsed = types.StringNull()
-	}
-
-	if token.MaxAge != nil {
-		data.MaxAge = types.StringValue(*token.MaxAge)
-	} else {
-		data.MaxAge = types.StringNull()
-	}
-
-	if token.MaxUnusedPeriod != nil {
-		data.MaxUnusedPeriod = types.StringValue(*token.MaxUnusedPeriod)
-	} else {
-		data.MaxUnusedPeriod = types.StringNull()
-	}
-
-	subnets, subnetDiags := types.ListValueFrom(ctx, types.StringType, token.AllowedSubnets)
-	resp.Diagnostics.Append(subnetDiags...)
+	diags = tokenToEphemeralModel(ctx, token, &data)
+	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
-	}
-	data.AllowedSubnets = subnets
-
-	if token.Secret != "" {
-		data.Token = types.StringValue(token.Secret)
-	} else {
-		data.Token = types.StringNull()
 	}
 
 	resp.Diagnostics.Append(resp.Result.Set(ctx, &data)...)
@@ -237,6 +202,56 @@ func (r *tokenEphemeralResource) Open(ctx context.Context, req ephemeral.OpenReq
 		return
 	}
 	resp.Diagnostics.Append(resp.Private.SetKey(ctx, "state", privateBytes)...)
+}
+
+// tokenToEphemeralModel converts an api.Token into a tokenEphemeralResourceModel.
+// The Token (secret) field is always populated from the API response here; it is
+// only present on create, and the ephemeral resource is created fresh on every Open.
+func tokenToEphemeralModel(ctx context.Context, t *api.Token, m *tokenEphemeralResourceModel) diag.Diagnostics {
+	var diags diag.Diagnostics
+
+	m.ID = types.StringValue(t.ID)
+	m.Name = types.StringValue(t.Name)
+	m.Created = types.StringValue(t.Created)
+	m.Owner = types.StringValue(t.Owner)
+	m.IsValid = types.BoolValue(t.IsValid)
+	m.PermCreateDomain = types.BoolValue(t.PermCreateDomain)
+	m.PermDeleteDomain = types.BoolValue(t.PermDeleteDomain)
+	m.PermManageTokens = types.BoolValue(t.PermManageTokens)
+	m.AutoPolicy = types.BoolValue(t.AutoPolicy)
+
+	if t.LastUsed != nil {
+		m.LastUsed = types.StringValue(*t.LastUsed)
+	} else {
+		m.LastUsed = types.StringNull()
+	}
+
+	if t.MaxAge != nil {
+		m.MaxAge = types.StringValue(*t.MaxAge)
+	} else {
+		m.MaxAge = types.StringNull()
+	}
+
+	if t.MaxUnusedPeriod != nil {
+		m.MaxUnusedPeriod = types.StringValue(*t.MaxUnusedPeriod)
+	} else {
+		m.MaxUnusedPeriod = types.StringNull()
+	}
+
+	subnets, subnetDiags := types.ListValueFrom(ctx, types.StringType, t.AllowedSubnets)
+	diags.Append(subnetDiags...)
+	if diags.HasError() {
+		return diags
+	}
+	m.AllowedSubnets = subnets
+
+	if t.Secret != "" {
+		m.Token = types.StringValue(t.Secret)
+	} else {
+		m.Token = types.StringNull()
+	}
+
+	return diags
 }
 
 func (r *tokenEphemeralResource) Close(ctx context.Context, req ephemeral.CloseRequest, resp *ephemeral.CloseResponse) {

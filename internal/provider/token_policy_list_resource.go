@@ -69,7 +69,10 @@ func (r *tokenPolicyListResource) List(ctx context.Context, req list.ListRequest
 	var config tokenPolicyListConfigModel
 	stream.Results = list.NoListResults
 
-	req.Config.Get(ctx, &config)
+	if diags := req.Config.Get(ctx, &config); diags.HasError() {
+		stream.Results = list.ListResultsStreamDiagnostics(diags)
+		return
+	}
 
 	policies, err := r.client.ListTokenPolicies(ctx, config.TokenID.ValueString())
 	if err != nil {
@@ -82,7 +85,6 @@ func (r *tokenPolicyListResource) List(ctx context.Context, req list.ListRequest
 
 	stream.Results = func(push func(list.ListResult) bool) {
 		for _, policy := range policies {
-
 			result := req.NewListResult(ctx)
 			result.DisplayName = policy.ID
 

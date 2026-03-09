@@ -54,8 +54,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (*http.R
 		}
 	}
 
-	var lastResp *http.Response
-	for attempt := range c.maxRetries {
+	for range c.maxRetries {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
@@ -86,11 +85,6 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (*http.R
 
 		// HTTP 429: parse Retry-After and sleep before retrying.
 		_ = resp.Body.Close()
-		lastResp = resp
-
-		if attempt == c.maxRetries {
-			break
-		}
 
 		waitSeconds := 1
 		if ra := resp.Header.Get("Retry-After"); ra != "" {
@@ -106,7 +100,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (*http.R
 		}
 	}
 
-	return lastResp, nil
+	return nil, fmt.Errorf("request rate-limited: still receiving HTTP 429 after %d retries", c.maxRetries)
 }
 
 // checkResponse reads and parses an error body from an HTTP response.

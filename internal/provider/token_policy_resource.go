@@ -228,10 +228,6 @@ func (r *tokenPolicyResource) Update(ctx context.Context, req resource.UpdateReq
 
 	tokenPolicyToModel(policy, &data)
 
-	// Restore immutable identity fields from state.
-	data.ID = state.ID
-	data.TokenID = state.TokenID
-
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 

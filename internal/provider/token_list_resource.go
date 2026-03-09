@@ -68,7 +68,6 @@ func (r *tokenListResource) List(ctx context.Context, req list.ListRequest, stre
 
 	stream.Results = func(push func(list.ListResult) bool) {
 		for _, token := range tokens {
-
 			result := req.NewListResult(ctx)
 			result.DisplayName = token.Name
 

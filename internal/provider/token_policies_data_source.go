@@ -120,33 +120,9 @@ func (d *tokenPoliciesDataSource) Read(ctx context.Context, req datasource.ReadR
 	policyObjs := make([]attr.Value, 0, len(policies))
 
 	for _, p := range policies {
-		var domain, subname, rrtype attr.Value
+		attrs := tokenPolicyToAttrValues(p)
 
-		if p.Domain != nil {
-			domain = types.StringValue(*p.Domain)
-		} else {
-			domain = types.StringNull()
-		}
-
-		if p.Subname != nil {
-			subname = types.StringValue(*p.Subname)
-		} else {
-			subname = types.StringNull()
-		}
-
-		if p.Type != nil {
-			rrtype = types.StringValue(*p.Type)
-		} else {
-			rrtype = types.StringNull()
-		}
-
-		obj, objDiags := types.ObjectValue(tokenPolicyAttrTypes, map[string]attr.Value{
-			"id":         types.StringValue(p.ID),
-			"domain":     domain,
-			"subname":    subname,
-			"type":       rrtype,
-			"perm_write": types.BoolValue(p.PermWrite),
-		})
+		obj, objDiags := types.ObjectValue(tokenPolicyAttrTypes, attrs)
 		resp.Diagnostics.Append(objDiags...)
 		if resp.Diagnostics.HasError() {
 			return
@@ -162,4 +138,36 @@ func (d *tokenPoliciesDataSource) Read(ctx context.Context, req datasource.ReadR
 	data.Policies = policiesList
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+// tokenPolicyToAttrValues converts an api.TokenPolicy to a map of attr.Value
+// suitable for constructing a types.Object with tokenPolicyAttrTypes.
+func tokenPolicyToAttrValues(p api.TokenPolicy) map[string]attr.Value {
+	var domain, subname, rrtype attr.Value
+
+	if p.Domain != nil {
+		domain = types.StringValue(*p.Domain)
+	} else {
+		domain = types.StringNull()
+	}
+
+	if p.Subname != nil {
+		subname = types.StringValue(*p.Subname)
+	} else {
+		subname = types.StringNull()
+	}
+
+	if p.Type != nil {
+		rrtype = types.StringValue(*p.Type)
+	} else {
+		rrtype = types.StringNull()
+	}
+
+	return map[string]attr.Value{
+		"id":         types.StringValue(p.ID),
+		"domain":     domain,
+		"subname":    subname,
+		"type":       rrtype,
+		"perm_write": types.BoolValue(p.PermWrite),
+	}
 }

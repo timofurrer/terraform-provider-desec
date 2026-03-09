@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/timofurrer/terraform-provider-desec/internal/api"
 )
@@ -155,52 +156,13 @@ func (d *tokensDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	tokenObjs := make([]attr.Value, 0, len(tokens))
 
 	for _, t := range tokens {
-		var lastUsed attr.Value
-		if t.LastUsed != nil {
-			lastUsed = types.StringValue(*t.LastUsed)
-		} else {
-			lastUsed = types.StringNull()
-		}
-
-		var maxAge attr.Value
-		if t.MaxAge != nil {
-			maxAge = types.StringValue(*t.MaxAge)
-		} else {
-			maxAge = types.StringNull()
-		}
-
-		var maxUnusedPeriod attr.Value
-		if t.MaxUnusedPeriod != nil {
-			maxUnusedPeriod = types.StringValue(*t.MaxUnusedPeriod)
-		} else {
-			maxUnusedPeriod = types.StringNull()
-		}
-
-		subnetVals := make([]attr.Value, 0, len(t.AllowedSubnets))
-		for _, s := range t.AllowedSubnets {
-			subnetVals = append(subnetVals, types.StringValue(s))
-		}
-		subnetsList, subnetDiags := types.ListValue(types.StringType, subnetVals)
-		resp.Diagnostics.Append(subnetDiags...)
+		attrs, attrDiags := tokenToAttrValues(ctx, t)
+		resp.Diagnostics.Append(attrDiags...)
 		if resp.Diagnostics.HasError() {
 			return
 		}
 
-		obj, objDiags := types.ObjectValue(tokenAttrTypes, map[string]attr.Value{
-			"id":                 types.StringValue(t.ID),
-			"name":               types.StringValue(t.Name),
-			"created":            types.StringValue(t.Created),
-			"last_used":          lastUsed,
-			"owner":              types.StringValue(t.Owner),
-			"is_valid":           types.BoolValue(t.IsValid),
-			"perm_create_domain": types.BoolValue(t.PermCreateDomain),
-			"perm_delete_domain": types.BoolValue(t.PermDeleteDomain),
-			"perm_manage_tokens": types.BoolValue(t.PermManageTokens),
-			"allowed_subnets":    subnetsList,
-			"auto_policy":        types.BoolValue(t.AutoPolicy),
-			"max_age":            maxAge,
-			"max_unused_period":  maxUnusedPeriod,
-		})
+		obj, objDiags := types.ObjectValue(tokenAttrTypes, attrs)
 		resp.Diagnostics.Append(objDiags...)
 		if resp.Diagnostics.HasError() {
 			return
@@ -216,4 +178,53 @@ func (d *tokensDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	data.Tokens = tokensList
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+// tokenToAttrValues converts an api.Token to a map of attr.Value suitable for
+// constructing a types.Object with tokenAttrTypes.
+func tokenToAttrValues(ctx context.Context, t api.Token) (map[string]attr.Value, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
+	var lastUsed attr.Value
+	if t.LastUsed != nil {
+		lastUsed = types.StringValue(*t.LastUsed)
+	} else {
+		lastUsed = types.StringNull()
+	}
+
+	var maxAge attr.Value
+	if t.MaxAge != nil {
+		maxAge = types.StringValue(*t.MaxAge)
+	} else {
+		maxAge = types.StringNull()
+	}
+
+	var maxUnusedPeriod attr.Value
+	if t.MaxUnusedPeriod != nil {
+		maxUnusedPeriod = types.StringValue(*t.MaxUnusedPeriod)
+	} else {
+		maxUnusedPeriod = types.StringNull()
+	}
+
+	subnetsList, subnetDiags := types.ListValueFrom(ctx, types.StringType, t.AllowedSubnets)
+	diags.Append(subnetDiags...)
+	if diags.HasError() {
+		return nil, diags
+	}
+
+	return map[string]attr.Value{
+		"id":                 types.StringValue(t.ID),
+		"name":               types.StringValue(t.Name),
+		"created":            types.StringValue(t.Created),
+		"last_used":          lastUsed,
+		"owner":              types.StringValue(t.Owner),
+		"is_valid":           types.BoolValue(t.IsValid),
+		"perm_create_domain": types.BoolValue(t.PermCreateDomain),
+		"perm_delete_domain": types.BoolValue(t.PermDeleteDomain),
+		"perm_manage_tokens": types.BoolValue(t.PermManageTokens),
+		"allowed_subnets":    subnetsList,
+		"auto_policy":        types.BoolValue(t.AutoPolicy),
+		"max_age":            maxAge,
+		"max_unused_period":  maxUnusedPeriod,
+	}, diags
 }
