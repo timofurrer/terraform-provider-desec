@@ -189,6 +189,54 @@ func TestAccRecordResourceIdentity(t *testing.T) {
 	})
 }
 
+// TestAccRecordResourceApexImport tests that importing an apex record works
+// correctly with both the canonical "@" form and the empty-segment "" form.
+// Step 3 (import with "domain//A") is the regression case for #8: before the
+// fix, ImportState writes "" into the intermediate state, which mismatches the
+// "@" that Read then stores, causing ImportStateVerify to report a failure.
+func TestAccRecordResourceApexImport(t *testing.T) {
+	domainName := testAccDomainName(t, "apex-import-acc")
+	providerConfig, factories := newTestAccEnv(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			// Step 1: Create an apex A record.
+			{
+				Config: testAccRecordResourceConfig(providerConfig, domainName, "@", 3600, `"10.0.0.1"`),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue(
+						"desec_record.test",
+						tfjsonpath.New("subname"),
+						knownvalue.StringExact("@"),
+					),
+				},
+			},
+			// Step 2: Import using "domain/@/A" — the canonical form.
+			// This should pass even without the fix because normalizeSubname("@") == "@".
+			{
+				ResourceName:            "desec_record.test",
+				ImportState:             true,
+				ImportStateId:           domainName + "/@/A",
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"created", "touched"},
+			},
+			// Step 3: Import using "domain//A" — the empty-segment form.
+			// Before the fix, ImportState writes "" into the intermediate state;
+			// Read then normalises it to "@"; ImportStateVerify sees "" != "@" and fails.
+			{
+				Config:                  testAccRecordResourceConfig(providerConfig, domainName, "@", 3600, `"10.0.0.1"`),
+				ResourceName:            "desec_record.test",
+				ImportState:             true,
+				ImportStateId:           domainName + "//A",
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"created", "touched"},
+			},
+		},
+	})
+}
+
 func testAccRecordResourceConfig(providerConfig, domainName, subname string, ttl int, records string) string {
 	return fmt.Sprintf(`
 %s

@@ -370,7 +370,10 @@ func (r *recordResource) Delete(ctx context.Context, req resource.DeleteRequest,
 
 func (r *recordResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	if req.ID != "" {
-		// Import format: "domain/subname/type" — e.g. "example.com/@/A"
+		// Import format: "domain/subname/type".
+		// The canonical apex form is "example.com/@/A"; the empty-segment form
+		// "example.com//A" is also accepted. Both are normalised to "@" here so
+		// that the intermediate import state is consistent with post-Read state.
 		parts := strings.SplitN(req.ID, "/", 3)
 		if len(parts) != 3 {
 			resp.Diagnostics.AddError(
@@ -380,7 +383,7 @@ func (r *recordResource) ImportState(ctx context.Context, req resource.ImportSta
 			return
 		}
 		resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("domain"), parts[0])...)
-		resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("subname"), parts[1])...)
+		resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("subname"), normalizeSubname(parts[1]))...)
 		resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("type"), parts[2])...)
 		return
 	}
