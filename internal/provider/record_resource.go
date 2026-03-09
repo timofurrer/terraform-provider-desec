@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -16,6 +17,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/timofurrer/terraform-provider-desec/internal/api"
 )
 
@@ -23,6 +26,85 @@ import (
 var _ resource.Resource = (*recordResource)(nil)
 var _ resource.ResourceWithImportState = (*recordResource)(nil)
 var _ resource.ResourceWithIdentity = (*recordResource)(nil)
+
+// subnameStringType is a custom string type for the subname attribute.
+// It treats "" and "@" as semantically equal, both representing the zone apex.
+type subnameStringType struct {
+	basetypes.StringType
+}
+
+var _ basetypes.StringTypable = subnameStringType{}
+
+func (t subnameStringType) Equal(o attr.Type) bool {
+	other, ok := o.(subnameStringType)
+	if !ok {
+		return false
+	}
+	return t.StringType.Equal(other.StringType)
+}
+
+func (t subnameStringType) String() string {
+	return "subnameStringType"
+}
+
+func (t subnameStringType) ValueFromString(_ context.Context, in basetypes.StringValue) (basetypes.StringValuable, diag.Diagnostics) {
+	return subnameStringValue{StringValue: in}, nil
+}
+
+func (t subnameStringType) ValueFromTerraform(ctx context.Context, in tftypes.Value) (attr.Value, error) {
+	attrVal, err := t.StringType.ValueFromTerraform(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	sv, ok := attrVal.(basetypes.StringValue)
+	if !ok {
+		return nil, fmt.Errorf("unexpected value type %T", attrVal)
+	}
+	val, diags := t.ValueFromString(ctx, sv)
+	if diags.HasError() {
+		return nil, fmt.Errorf("converting StringValue to subnameStringValue: %v", diags)
+	}
+	return val, nil
+}
+
+func (t subnameStringType) ValueType(_ context.Context) attr.Value {
+	return subnameStringValue{}
+}
+
+// subnameStringValue is the value type for subnameStringType.
+// It implements semantic equality so that "" and "@" are treated as the same value.
+type subnameStringValue struct {
+	basetypes.StringValue
+}
+
+var _ basetypes.StringValuable = subnameStringValue{}
+var _ basetypes.StringValuableWithSemanticEquals = subnameStringValue{}
+
+func (v subnameStringValue) Equal(o attr.Value) bool {
+	other, ok := o.(subnameStringValue)
+	if !ok {
+		return false
+	}
+	return v.StringValue.Equal(other.StringValue)
+}
+
+func (v subnameStringValue) Type(_ context.Context) attr.Type {
+	return subnameStringType{}
+}
+
+// StringSemanticEquals returns true when both values represent the zone apex,
+// i.e. one is "" and the other is "@". This prevents a persistent plan diff
+// when the user writes subname = "" and the provider stores "@" in state.
+func (v subnameStringValue) StringSemanticEquals(_ context.Context, newValuable basetypes.StringValuable) (bool, diag.Diagnostics) {
+	newVal, ok := newValuable.(subnameStringValue)
+	if !ok {
+		return false, nil
+	}
+	prior := v.ValueString()
+	next := newVal.ValueString()
+	isApex := func(s string) bool { return s == "" || s == "@" }
+	return isApex(prior) && isApex(next), nil
+}
 
 // recordIdentityModel describes the identity of a record resource.
 type recordIdentityModel struct {
@@ -62,14 +144,14 @@ type recordResource struct {
 
 // recordResourceModel describes the resource data model.
 type recordResourceModel struct {
-	ID      types.String `tfsdk:"id"`
-	Domain  types.String `tfsdk:"domain"`
-	Subname types.String `tfsdk:"subname"`
-	Type    types.String `tfsdk:"type"`
-	TTL     types.Int64  `tfsdk:"ttl"`
-	Records types.Set    `tfsdk:"records"`
-	Created types.String `tfsdk:"created"`
-	Touched types.String `tfsdk:"touched"`
+	ID      types.String       `tfsdk:"id"`
+	Domain  types.String       `tfsdk:"domain"`
+	Subname subnameStringValue `tfsdk:"subname"`
+	Type    types.String       `tfsdk:"type"`
+	TTL     types.Int64        `tfsdk:"ttl"`
+	Records types.Set          `tfsdk:"records"`
+	Created types.String       `tfsdk:"created"`
+	Touched types.String       `tfsdk:"touched"`
 }
 
 func (r *recordResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -97,7 +179,8 @@ func (r *recordResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				},
 			},
 			"subname": schema.StringAttribute{
-				MarkdownDescription: "The subdomain part of the record name. Use `@` for the zone apex (root of the domain). Use an empty string or omit for no subdomain (equivalent to `@`).",
+				CustomType:          subnameStringType{},
+				MarkdownDescription: "The subdomain part of the record name. Use `@` or `\"\"` for the zone apex (root of the domain).",
 				Required:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
@@ -186,7 +269,7 @@ func (r *recordResource) Create(ctx context.Context, req resource.CreateRequest,
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 	resp.Diagnostics.Append(resp.Identity.Set(ctx, recordIdentityModel{
 		Domain:  data.Domain,
-		Subname: data.Subname,
+		Subname: types.StringValue(data.Subname.ValueString()),
 		Type:    data.Type,
 	})...)
 }
@@ -222,7 +305,7 @@ func (r *recordResource) Read(ctx context.Context, req resource.ReadRequest, res
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 	resp.Diagnostics.Append(resp.Identity.Set(ctx, recordIdentityModel{
 		Domain:  data.Domain,
-		Subname: data.Subname,
+		Subname: types.StringValue(data.Subname.ValueString()),
 		Type:    data.Type,
 	})...)
 }
@@ -325,7 +408,7 @@ func rrsetToModel(ctx context.Context, rs *api.RRset, m *recordResourceModel) di
 	subname := normalizeSubname(rs.Subname)
 	m.ID = types.StringValue(rs.Domain + "/" + subname + "/" + rs.Type)
 	m.Domain = types.StringValue(rs.Domain)
-	m.Subname = types.StringValue(subname)
+	m.Subname = subnameStringValue{StringValue: basetypes.NewStringValue(subname)}
 	m.Type = types.StringValue(rs.Type)
 	m.TTL = types.Int64Value(int64(rs.TTL))
 	m.Created = types.StringValue(rs.Created)

@@ -108,6 +108,52 @@ func TestAccRecordResourceApex(t *testing.T) {
 	})
 }
 
+// TestAccRecordResourceApexSubnameDrift is a regression test for issue #7:
+// when the user writes subname = "" in their config, the provider normalises it
+// to "@" before storing it in state (via normalizeSubname). On the next plan,
+// the config value ("") differs from the state value ("@"), which — because
+// subname has RequiresReplace — produces a persistent, unwanted destroy/recreate.
+//
+// The fix is to add a plan modifier that normalises "" → "@" on the planned
+// value so that config and state stay in sync. Until that fix is applied, this
+// test will fail at Step 2 because the framework's post-apply idempotency check
+// detects a non-empty plan.
+func TestAccRecordResourceApexSubnameDrift(t *testing.T) {
+	domainName := testAccDomainName(t, "apex-drift-acc")
+	providerConfig, factories := newTestAccEnv(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			// Step 1: Create with subname="" — applies successfully.
+			// The provider normalises "" to "@" internally (API and state storage),
+			// but semantic equality means the configured value "" is preserved in
+			// the Terraform state as-is, so no persistent diff appears on the next plan.
+			{
+				Config: testAccRecordResourceConfig(providerConfig, domainName, "", 3600, `"10.0.0.1"`),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue(
+						"desec_record.test",
+						tfjsonpath.New("subname"),
+						knownvalue.StringExact(""),
+					),
+				},
+			},
+			// Step 2: Re-apply the exact same config (subname still "").
+			// With the bug present: config "" != state "@" → non-empty plan →
+			// RequiresReplace triggers a replace → framework idempotency check
+			// fails → this test fails (demonstrating the bug).
+			// With the bug fixed: semantic equality recognises "" and "@" as
+			// equivalent zone-apex representations → empty plan → test passes.
+			{
+				Config:             testAccRecordResourceConfig(providerConfig, domainName, "", 3600, `"10.0.0.1"`),
+				ExpectNonEmptyPlan: false,
+			},
+		},
+	})
+}
+
 func TestAccRecordResourceIdentity(t *testing.T) {
 	domainName := testAccDomainName(t, "id-rec-acc")
 	providerConfig, factories := newTestAccEnv(t)

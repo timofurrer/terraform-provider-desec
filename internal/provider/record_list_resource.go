@@ -113,7 +113,7 @@ func (r *recordListResource) List(ctx context.Context, req list.ListRequest, str
 
 			if diags := result.Identity.Set(ctx, recordIdentityModel{
 				Domain:  model.Domain,
-				Subname: model.Subname,
+				Subname: types.StringValue(model.Subname.ValueString()),
 				Type:    model.Type,
 			}); diags.HasError() {
 				result.Diagnostics.Append(diags...)
