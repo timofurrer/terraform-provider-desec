@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/timofurrer/terraform-provider-desec/internal/api"
 )
 
 const (
@@ -24,82 +25,19 @@ const (
 	minimumTTL = 3600
 )
 
-// domain is the in-memory representation of a domain.
-type domain struct {
-	Created    string `json:"created"`
-	Keys       []key  `json:"keys,omitempty"`
-	MinimumTTL int    `json:"minimum_ttl"`
-	Name       string `json:"name"`
-	Published  string `json:"published"`
-	Touched    string `json:"touched"`
-}
-
-type key struct {
-	DNSKey  string   `json:"dnskey"`
-	DS      []string `json:"ds"`
-	Managed bool     `json:"managed"`
-}
-
-// rrset is the in-memory representation of a resource record set.
-type rrset struct {
-	Created string   `json:"created"`
-	Domain  string   `json:"domain"`
-	Subname string   `json:"subname"`
-	Name    string   `json:"name"`
-	Type    string   `json:"type"`
-	Records []string `json:"records"`
-	TTL     int      `json:"ttl"`
-	Touched string   `json:"touched"`
-}
-
-// token is the in-memory representation of an API token.
-type token struct {
-	ID               string   `json:"id"`
-	Created          string   `json:"created"`
-	LastUsed         *string  `json:"last_used"`
-	Owner            string   `json:"owner"`
-	UserOverride     *string  `json:"user_override"`
-	MFA              *bool    `json:"mfa"`
-	MaxAge           *string  `json:"max_age"`
-	MaxUnusedPeriod  *string  `json:"max_unused_period"`
-	Name             string   `json:"name"`
-	PermCreateDomain bool     `json:"perm_create_domain"`
-	PermDeleteDomain bool     `json:"perm_delete_domain"`
-	PermManageTokens bool     `json:"perm_manage_tokens"`
-	AllowedSubnets   []string `json:"allowed_subnets"`
-	AutoPolicy       bool     `json:"auto_policy"`
-	IsValid          bool     `json:"is_valid"`
-	secret           string   // stored internally, not marshaled directly
-}
-
-// tokenResponse is the JSON-serializable form of a token; the secret field is
-// only included in create responses (omitempty ensures it is omitted otherwise).
-type tokenResponse struct {
-	token
-	Token string `json:"token,omitempty"`
-}
-
-// tokenPolicy is the in-memory representation of a token scoping policy.
-type tokenPolicy struct {
-	ID        string  `json:"id"`
-	Domain    *string `json:"domain"`
-	Subname   *string `json:"subname"`
-	Type      *string `json:"type"`
-	PermWrite bool    `json:"perm_write"`
-}
-
 // isDefaultPolicy returns true when all scope fields are nil (the catch-all policy).
-func isDefaultPolicy(p *tokenPolicy) bool {
+func isDefaultPolicy(p *api.TokenPolicy) bool {
 	return p.Domain == nil && p.Subname == nil && p.Type == nil
 }
 
 // Server is a fake deSEC API server backed by in-memory state.
 type Server struct {
 	mu       sync.RWMutex
-	domains  map[string]*domain                 // key: domain name
-	rrsets   map[string]map[string]*rrset       // key: domain name -> "subname/type"
-	tokens   map[string]*token                  // key: token ID
-	policies map[string]map[string]*tokenPolicy // key: token ID -> policy ID
+	domains  map[string]*api.Domain                 // key: domain name
+	rrsets   map[string]map[string]*api.RRset       // key: domain name -> "subname/type"
+	tokens   map[string]*api.Token                  // key: token ID
+	secrets  map[string]string                      // key: token ID -> raw secret value
+	policies map[string]map[string]*api.TokenPolicy // key: token ID -> policy ID
 	srv      *httptest.Server
 }
 
@@ -107,10 +45,11 @@ type Server struct {
 // The returned Server must be closed with Close() when done.
 func NewServer() *Server {
 	s := &Server{
-		domains:  make(map[string]*domain),
-		rrsets:   make(map[string]map[string]*rrset),
-		tokens:   make(map[string]*token),
-		policies: make(map[string]map[string]*tokenPolicy),
+		domains:  make(map[string]*api.Domain),
+		rrsets:   make(map[string]map[string]*api.RRset),
+		tokens:   make(map[string]*api.Token),
+		secrets:  make(map[string]string),
+		policies: make(map[string]map[string]*api.TokenPolicy),
 	}
 
 	mux := http.NewServeMux()
@@ -172,8 +111,8 @@ func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) bool {
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	for _, t := range s.tokens {
-		if t.secret == bearer {
+	for _, secret := range s.secrets {
+		if secret == bearer {
 			return true
 		}
 	}
@@ -212,7 +151,7 @@ func (s *Server) listDomains(w http.ResponseWriter, r *http.Request) {
 	ownsQname := r.URL.Query().Get("owns_qname")
 
 	// Collect and sort domains by creation time (reverse chronological).
-	all := make([]*domain, 0, len(s.domains))
+	all := make([]*api.Domain, 0, len(s.domains))
 	for _, d := range s.domains {
 		all = append(all, d)
 	}
@@ -222,7 +161,7 @@ func (s *Server) listDomains(w http.ResponseWriter, r *http.Request) {
 
 	// Filter by owns_qname if provided.
 	if ownsQname != "" {
-		var filtered []*domain
+		var filtered []*api.Domain
 		for _, d := range all {
 			if domainOwnsQname(d.Name, ownsQname) {
 				filtered = append(filtered, d)
@@ -233,7 +172,7 @@ func (s *Server) listDomains(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Strip keys (not returned in list endpoint).
-	result := make([]domain, 0, len(all))
+	result := make([]api.Domain, 0, len(all))
 	for _, d := range all {
 		stripped := *d
 		stripped.Keys = nil
@@ -256,9 +195,7 @@ func (s *Server) listDomains(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createDomain(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Name string `json:"name"`
-	}
+	var req api.CreateDomainOptions
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
 		http.Error(w, `{"name":["This field is required."]}`, http.StatusBadRequest)
 		return
@@ -273,13 +210,13 @@ func (s *Server) createDomain(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ts := now()
-	d := &domain{
+	d := &api.Domain{
 		Created:    ts,
 		MinimumTTL: minimumTTL,
 		Name:       req.Name,
 		Published:  ts,
 		Touched:    ts,
-		Keys: []key{
+		Keys: []api.Key{
 			{
 				DNSKey:  "257 3 13 FakeKey==",
 				DS:      []string{"12345 13 2 fakeds256hash", "12345 13 4 fakeds384hash"},
@@ -288,7 +225,7 @@ func (s *Server) createDomain(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	s.domains[req.Name] = d
-	s.rrsets[req.Name] = make(map[string]*rrset)
+	s.rrsets[req.Name] = make(map[string]*api.RRset)
 
 	writeJSON(w, http.StatusCreated, d)
 }
@@ -357,7 +294,7 @@ func (s *Server) listRRsets(w http.ResponseWriter, r *http.Request) {
 	filterType := r.URL.Query().Get("type")
 	hasSubnameFilter := r.URL.Query().Has("subname")
 
-	all := make([]*rrset, 0)
+	all := make([]*api.RRset, 0)
 	for _, rs := range s.rrsets[domainName] {
 		if filterType != "" && rs.Type != filterType {
 			continue
@@ -376,7 +313,7 @@ func (s *Server) listRRsets(w http.ResponseWriter, r *http.Request) {
 		return all[i].Type < all[j].Type
 	})
 
-	result := make([]rrset, 0, len(all))
+	result := make([]api.RRset, 0, len(all))
 	for _, rs := range all {
 		result = append(result, *rs)
 	}
@@ -406,12 +343,7 @@ func (s *Server) createRRset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		Subname string   `json:"subname"`
-		Type    string   `json:"type"`
-		TTL     int      `json:"ttl"`
-		Records []string `json:"records"`
-	}
+	var req api.CreateRRsetOptions
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"detail":"Parse error."}`, http.StatusBadRequest)
 		return
@@ -429,7 +361,7 @@ func (s *Server) createRRset(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ts := now()
-	rs := &rrset{
+	rs := &api.RRset{
 		Created: ts,
 		Domain:  domainName,
 		Subname: req.Subname,
@@ -490,6 +422,7 @@ func (s *Server) updateRRset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// *int needed to distinguish absent field from zero in PATCH.
 	var req struct {
 		TTL     *int     `json:"ttl"`
 		Records []string `json:"records"`
@@ -547,6 +480,7 @@ func (s *Server) bulkUpdateRRsets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// *int needed to distinguish absent field from zero in PATCH/PUT.
 	var reqs []struct {
 		Subname string   `json:"subname"`
 		Type    string   `json:"type"`
@@ -559,7 +493,7 @@ func (s *Server) bulkUpdateRRsets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ts := now()
-	results := make([]rrset, 0, len(reqs))
+	results := make([]api.RRset, 0, len(reqs))
 
 	for _, req := range reqs {
 		rrKey := rrsetKey(req.Subname, req.Type)
@@ -588,7 +522,7 @@ func (s *Server) bulkUpdateRRsets(w http.ResponseWriter, r *http.Request) {
 			if req.TTL != nil {
 				ttl = *req.TTL
 			}
-			rs := &rrset{
+			rs := &api.RRset{
 				Created: ts,
 				Domain:  domainName,
 				Subname: req.Subname,
@@ -612,7 +546,7 @@ func (s *Server) listTokens(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	all := make([]*token, 0, len(s.tokens))
+	all := make([]*api.Token, 0, len(s.tokens))
 	for _, t := range s.tokens {
 		all = append(all, t)
 	}
@@ -624,9 +558,9 @@ func (s *Server) listTokens(w http.ResponseWriter, r *http.Request) {
 		return all[i].ID < all[j].ID
 	})
 
-	result := make([]tokenResponse, 0, len(all))
+	result := make([]api.Token, 0, len(all))
 	for _, t := range all {
-		result = append(result, tokenResponse{token: *t})
+		result = append(result, *t)
 	}
 
 	cursor := r.URL.Query().Get("cursor")
@@ -644,6 +578,7 @@ func (s *Server) listTokens(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
+	// Use value-type bools so we can detect absent fields and apply API defaults.
 	var req struct {
 		Name             string   `json:"name"`
 		PermCreateDomain bool     `json:"perm_create_domain"`
@@ -670,7 +605,7 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 	id := uuid.NewString()
 	secret := "fake-token-" + id[:8]
 	ts := now()
-	t := &token{
+	t := &api.Token{
 		ID:               id,
 		Created:          ts,
 		LastUsed:         nil,
@@ -686,12 +621,15 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 		AllowedSubnets:   allowedSubnets,
 		AutoPolicy:       req.AutoPolicy,
 		IsValid:          true,
-		secret:           secret,
 	}
 	s.tokens[id] = t
+	s.secrets[id] = secret
 
-	// Include secret in the create response only.
-	writeJSON(w, http.StatusCreated, tokenResponse{token: *t, Token: secret})
+	// Include secret in the create response only; Secret has omitempty so it
+	// is suppressed in all other responses.
+	resp := *t
+	resp.Secret = secret
+	writeJSON(w, http.StatusCreated, &resp)
 }
 
 func (s *Server) getToken(w http.ResponseWriter, r *http.Request) {
@@ -705,8 +643,8 @@ func (s *Server) getToken(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"detail":"Not found."}`, http.StatusNotFound)
 		return
 	}
-	// Do NOT include the secret.
-	writeJSON(w, http.StatusOK, tokenResponse{token: *t})
+	// Secret field is empty string on stored token; omitempty suppresses it.
+	writeJSON(w, http.StatusOK, t)
 }
 
 func (s *Server) updateToken(w http.ResponseWriter, r *http.Request) {
@@ -753,7 +691,7 @@ func (s *Server) updateToken(w http.ResponseWriter, r *http.Request) {
 		_ = json.Unmarshal(v, &t.MaxUnusedPeriod)
 	}
 
-	writeJSON(w, http.StatusOK, tokenResponse{token: *t})
+	writeJSON(w, http.StatusOK, t)
 }
 
 func (s *Server) deleteToken(w http.ResponseWriter, r *http.Request) {
@@ -763,6 +701,7 @@ func (s *Server) deleteToken(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.Unlock()
 
 	delete(s.tokens, id)
+	delete(s.secrets, id)
 	delete(s.policies, id) // cascade-delete all policies for this token
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -780,7 +719,7 @@ func (s *Server) listTokenPolicies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	all := make([]*tokenPolicy, 0)
+	all := make([]*api.TokenPolicy, 0)
 	for _, p := range s.policies[tokenID] {
 		all = append(all, p)
 	}
@@ -794,7 +733,7 @@ func (s *Server) listTokenPolicies(w http.ResponseWriter, r *http.Request) {
 		return all[i].ID < all[j].ID
 	})
 
-	result := make([]tokenPolicy, 0, len(all))
+	result := make([]api.TokenPolicy, 0, len(all))
 	for _, p := range all {
 		result = append(result, *p)
 	}
@@ -816,12 +755,7 @@ func (s *Server) listTokenPolicies(w http.ResponseWriter, r *http.Request) {
 func (s *Server) createTokenPolicy(w http.ResponseWriter, r *http.Request) {
 	tokenID := r.PathValue("id")
 
-	var req struct {
-		Domain    *string `json:"domain"`
-		Subname   *string `json:"subname"`
-		Type      *string `json:"type"`
-		PermWrite bool    `json:"perm_write"`
-	}
+	var req api.CreateTokenPolicyOptions
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"detail":"Parse error."}`, http.StatusBadRequest)
 		return
@@ -836,10 +770,10 @@ func (s *Server) createTokenPolicy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if s.policies[tokenID] == nil {
-		s.policies[tokenID] = make(map[string]*tokenPolicy)
+		s.policies[tokenID] = make(map[string]*api.TokenPolicy)
 	}
 
-	incoming := &tokenPolicy{Domain: req.Domain, Subname: req.Subname, Type: req.Type}
+	incoming := &api.TokenPolicy{Domain: req.Domain, Subname: req.Subname, Type: req.Type}
 
 	// Enforce: a specific policy requires a default policy to already exist.
 	if !isDefaultPolicy(incoming) {
@@ -857,7 +791,7 @@ func (s *Server) createTokenPolicy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := uuid.NewString()
-	p := &tokenPolicy{
+	p := &api.TokenPolicy{
 		ID:        id,
 		Domain:    req.Domain,
 		Subname:   req.Subname,
@@ -908,9 +842,7 @@ func (s *Server) updateTokenPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		PermWrite bool `json:"perm_write"`
-	}
+	var req api.UpdateTokenPolicyOptions
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"detail":"Parse error."}`, http.StatusBadRequest)
 		return
