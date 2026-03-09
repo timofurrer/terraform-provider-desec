@@ -74,17 +74,12 @@ func TestAccTokenEphemeralResourceKeepOnClose(t *testing.T) {
 				t.Logf("kept-token cleanup: ListTokens error: %v", err)
 				return
 			}
-			found := false
 			for _, tok := range tokens {
 				if tok.Name == "kept-token" {
-					found = true
 					if err := c.DeleteToken(context.Background(), tok.ID); err != nil {
 						t.Logf("kept-token cleanup: DeleteToken(%s) error: %v", tok.ID, err)
 					}
 				}
-			}
-			if !found {
-				t.Logf("kept-token cleanup: no token named \"kept-token\" found (already gone?)")
 			}
 		})
 	}

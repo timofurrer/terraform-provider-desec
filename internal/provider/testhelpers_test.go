@@ -30,7 +30,11 @@ func testAccDomainName(t *testing.T, suffix string) string {
 		// domains created by the same test share the same random component,
 		// but different runs produce different names and don't collide.
 		id, _ := testRunIDs.LoadOrStore(t.Name(), randomHex(3))
-		return fmt.Sprintf("tf-acc-%s-%s-%s.dedyn.io", suffix, sanitize(t.Name()), id.(string))
+		idStr, ok := id.(string)
+		if !ok {
+			t.Fatalf("testRunIDs: unexpected non-string value %T", id)
+		}
+		return fmt.Sprintf("tf-acc-%s-%s-%s.dedyn.io", suffix, sanitize(t.Name()), idStr)
 	}
 	return fmt.Sprintf("%s.example.com", suffix)
 }
@@ -106,13 +110,13 @@ func (c tokenListContainsCheck) CheckState(ctx context.Context, req statecheck.C
 		resp.Error = fmt.Errorf("resource %q has no attribute \"tokens\"", c.resourceAddr)
 		return
 	}
-	list, ok := tokens.([]interface{})
+	list, ok := tokens.([]any)
 	if !ok {
 		resp.Error = fmt.Errorf("resource %q attribute \"tokens\" is not a list", c.resourceAddr)
 		return
 	}
 	for _, item := range list {
-		m, ok := item.(map[string]interface{})
+		m, ok := item.(map[string]any)
 		if !ok {
 			continue
 		}
