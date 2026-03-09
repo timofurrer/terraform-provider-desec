@@ -38,14 +38,14 @@ func TestAccDomainsDataSource(t *testing.T) {
 
 func TestAccDomainsDataSourceOwnsQname(t *testing.T) {
 	domainName := testAccDomainName(t, "owns-qname-test")
-	providerConfig2, factories2 := newTestAccEnv(t)
+	providerConfig, factories := newTestAccEnv(t)
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
-		ProtoV6ProviderFactories: factories2,
+		ProtoV6ProviderFactories: factories,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccDomainsDataSourceOwnsQnameConfig(providerConfig2, domainName),
+				Config: testAccDomainsDataSourceOwnsQnameConfig(providerConfig, domainName),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue(
 						"data.desec_domains.filter",

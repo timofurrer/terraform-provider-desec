@@ -82,15 +82,15 @@ func TestAccRecordResource(t *testing.T) {
 
 func TestAccRecordResourceApex(t *testing.T) {
 	domainName := testAccDomainName(t, "apex-rec-acc")
-	providerConfig2, factories2 := newTestAccEnv(t)
+	providerConfig, factories := newTestAccEnv(t)
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
-		ProtoV6ProviderFactories: factories2,
+		ProtoV6ProviderFactories: factories,
 		Steps: []resource.TestStep{
 			// Create record at zone apex using "@".
 			{
-				Config: testAccRecordResourceConfig(providerConfig2, domainName, "@", 3600, `"10.0.0.1"`),
+				Config: testAccRecordResourceConfig(providerConfig, domainName, "@", 3600, `"10.0.0.1"`),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue(
 						"desec_record.test",

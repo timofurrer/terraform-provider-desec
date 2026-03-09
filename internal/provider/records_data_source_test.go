@@ -37,14 +37,14 @@ func TestAccRecordsDataSource(t *testing.T) {
 
 func TestAccRecordsDataSourceFilter(t *testing.T) {
 	domainName := testAccDomainName(t, "recs-filter-acc")
-	providerConfig2, factories2 := newTestAccEnv(t)
+	providerConfig, factories := newTestAccEnv(t)
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
-		ProtoV6ProviderFactories: factories2,
+		ProtoV6ProviderFactories: factories,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccRecordsDataSourceFilterConfig(providerConfig2, domainName),
+				Config: testAccRecordsDataSourceFilterConfig(providerConfig, domainName),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue(
 						"data.desec_records.filtered",
