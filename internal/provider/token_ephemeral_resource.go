@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/ephemeral"
 	ephemerals "github.com/hashicorp/terraform-plugin-framework/ephemeral/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -63,11 +64,11 @@ func (r *tokenEphemeralResource) Schema(_ context.Context, _ ephemeral.SchemaReq
 		MarkdownDescription: "Creates a short-lived deSEC API token on open and, by default, deletes it on close. Use `keep_on_close = true` to retain the token after Terraform finishes.",
 
 		Attributes: map[string]ephemerals.Attribute{
-			"id": ephemerals.StringAttribute{
+			"id": schema.StringAttribute{
 				MarkdownDescription: "The token's UUID.",
 				Computed:            true,
 			},
-			"name": ephemerals.StringAttribute{
+			"name": schema.StringAttribute{
 				MarkdownDescription: "Human-readable token name for reference purposes. Maximum 178 characters.",
 				Optional:            true,
 				Computed:            true,
@@ -77,57 +78,57 @@ func (r *tokenEphemeralResource) Schema(_ context.Context, _ ephemeral.SchemaReq
 				Computed:            true,
 				Sensitive:           true,
 			},
-			"created": ephemerals.StringAttribute{
+			"created": schema.StringAttribute{
 				MarkdownDescription: "Timestamp of token creation in ISO 8601 format.",
 				Computed:            true,
 			},
-			"last_used": ephemerals.StringAttribute{
+			"last_used": schema.StringAttribute{
 				MarkdownDescription: "Timestamp of when the token was last used, or `null` if it has never been used.",
 				Computed:            true,
 			},
-			"owner": ephemerals.StringAttribute{
+			"owner": schema.StringAttribute{
 				MarkdownDescription: "Email address of the deSEC account that owns this token.",
 				Computed:            true,
 			},
-			"is_valid": ephemerals.BoolAttribute{
+			"is_valid": schema.BoolAttribute{
 				MarkdownDescription: "Whether the token is currently valid (not expired).",
 				Computed:            true,
 			},
-			"perm_create_domain": ephemerals.BoolAttribute{
+			"perm_create_domain": schema.BoolAttribute{
 				MarkdownDescription: "Whether this token may create new domains.",
 				Optional:            true,
 				Computed:            true,
 			},
-			"perm_delete_domain": ephemerals.BoolAttribute{
+			"perm_delete_domain": schema.BoolAttribute{
 				MarkdownDescription: "Whether this token may delete domains.",
 				Optional:            true,
 				Computed:            true,
 			},
-			"perm_manage_tokens": ephemerals.BoolAttribute{
+			"perm_manage_tokens": schema.BoolAttribute{
 				MarkdownDescription: "Whether this token may manage tokens (list, create, modify, delete).",
 				Optional:            true,
 				Computed:            true,
 			},
-			"allowed_subnets": ephemerals.ListAttribute{
+			"allowed_subnets": schema.ListAttribute{
 				MarkdownDescription: "List of IP addresses or CIDR subnets that may authenticate using this token. Defaults to `[\"0.0.0.0/0\", \"::/0\"]` (unrestricted).",
 				Optional:            true,
 				Computed:            true,
 				ElementType:         types.StringType,
 			},
-			"auto_policy": ephemerals.BoolAttribute{
+			"auto_policy": schema.BoolAttribute{
 				MarkdownDescription: "When `true`, automatically creates a permissive scoping policy for each domain created with this token.",
 				Optional:            true,
 				Computed:            true,
 			},
-			"max_age": ephemerals.StringAttribute{
+			"max_age": schema.StringAttribute{
 				MarkdownDescription: "Maximum token lifetime as a duration string (e.g. `\"365 00:00:00\"`). Set to `null` for no age limit.",
 				Optional:            true,
 			},
-			"max_unused_period": ephemerals.StringAttribute{
+			"max_unused_period": schema.StringAttribute{
 				MarkdownDescription: "Maximum allowed period of disuse before the token is invalidated (e.g. `\"30 00:00:00\"`). Set to `null` for no limit.",
 				Optional:            true,
 			},
-			"keep_on_close": ephemerals.BoolAttribute{
+			"keep_on_close": schema.BoolAttribute{
 				MarkdownDescription: "When `true`, the token is not deleted when Terraform closes the ephemeral resource. Defaults to `false`.",
 				Optional:            true,
 			},

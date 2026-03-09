@@ -158,13 +158,27 @@ func (s *Server) Close() {
 }
 
 // authenticate checks the Authorization header and writes 401 if invalid.
+// It accepts the hardcoded test token as well as any token dynamically created
+// via the API (i.e. tokens stored in the in-memory tokens map).
 func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) bool {
 	authHeader := r.Header.Get("Authorization")
-	if authHeader != "Token "+testToken {
+	bearer, ok := strings.CutPrefix(authHeader, "Token ")
+	if !ok {
 		http.Error(w, `{"detail":"Invalid token."}`, http.StatusUnauthorized)
 		return false
 	}
-	return true
+	if bearer == testToken {
+		return true
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, t := range s.tokens {
+		if t.secret == bearer {
+			return true
+		}
+	}
+	http.Error(w, `{"detail":"Invalid token."}`, http.StatusUnauthorized)
+	return false
 }
 
 // requireAuthentication wraps a handlerFunc to enforce token authentication.

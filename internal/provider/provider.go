@@ -43,7 +43,30 @@ func (p *desecProvider) Metadata(_ context.Context, _ provider.MetadataRequest, 
 
 func (p *desecProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "The deSEC provider manages DNS zones and resource record sets using the [deSEC DNS API](https://desec.io).",
+		MarkdownDescription: `The [deSEC](https://desec.io) provider enables Terraform and OpenTofu to manage DNS infrastructure hosted on deSEC, a free and secure DNS hosting service.
+
+Use this provider to declaratively manage:
+
+- **Domains** — create and inspect DNS zones, including DNSSEC key material ([deSEC domains API](https://desec.readthedocs.io/en/latest/dns/domains.html))
+- **Resource Record Sets** — manage any DNS record type at the zone apex or any subdomain ([deSEC RRsets API](https://desec.readthedocs.io/en/latest/dns/rrsets.html))
+- **API Tokens** — create scoped, expiring authentication tokens with fine-grained IP allowlists and domain permissions ([deSEC tokens API](https://desec.readthedocs.io/en/latest/auth/tokens.html))
+- **Token Policies** — define per-domain, per-subname, and per-type write permissions for tokens, including default catch-all policies
+
+### Data Sources
+
+Read-only access is available for all of the above through matching data sources (` + "`" + `desec_domain` + "`" + `, ` + "`" + `desec_domains` + "`" + `, ` + "`" + `desec_record` + "`" + `, ` + "`" + `desec_records` + "`" + `, ` + "`" + `desec_token` + "`" + `, ` + "`" + `desec_tokens` + "`" + `, ` + "`" + `desec_token_policy` + "`" + `, ` + "`" + `desec_token_policies` + "`" + `), plus a ` + "`" + `desec_zonefile` + "`" + ` data source that exports a full RFC 1035 zone file.
+
+### Ephemeral Resources
+
+` + "`" + `ephemeral "desec_token"` + "`" + ` creates a short-lived token for use within a single Terraform/OpenTofu run. By default the token is deleted on close; set ` + "`" + `keep_on_close = true` + "`" + ` to retain it after the run completes.
+
+### List Resources
+
+` + "`" + `desec_domain` + "`" + `, ` + "`" + `desec_record` + "`" + `, ` + "`" + `desec_token` + "`" + `, and ` + "`" + `desec_token_policy` + "`" + ` are also available as list resources for bulk import and enumeration workflows.
+
+### Rate Limiting
+
+The deSEC API enforces rate limits. The provider automatically retries requests that receive HTTP 429 responses, honouring the ` + "`" + `Retry-After` + "`" + ` header (up to 5 retries per request). See the [deSEC rate limits documentation](https://desec.readthedocs.io/en/latest/rate-limits.html).`,
 		Attributes: map[string]schema.Attribute{
 			"api_token": schema.StringAttribute{
 				MarkdownDescription: "The deSEC API token. Can also be set via the `DESEC_API_TOKEN` environment variable.",
@@ -51,7 +74,7 @@ func (p *desecProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp
 				Sensitive:           true,
 			},
 			"api_url": schema.StringAttribute{
-				MarkdownDescription: "The deSEC API base URL. Defaults to `https://desec.io/api/v1`. Can also be set via the `DESEC_API_URL` environment variable. Override this for testing.",
+				MarkdownDescription: "The deSEC API base URL. Defaults to `https://desec.io/api/v1`. Can also be set via the `DESEC_API_URL` environment variable. Can be overridden for custom endpoints or testing.",
 				Optional:            true,
 			},
 		},
@@ -67,8 +90,15 @@ func (p *desecProvider) Configure(ctx context.Context, req provider.ConfigureReq
 	}
 
 	// Resolve API token from config or environment.
+	// If the token is unknown at plan time (e.g. sourced from another resource
+	// that hasn't been created yet), defer configuration to apply time by
+	// returning early without error. Resources guard against a nil client via
+	// their own Configure methods.
+	if data.APIToken.IsUnknown() {
+		return
+	}
 	apiToken := os.Getenv("DESEC_API_TOKEN")
-	if !data.APIToken.IsNull() && !data.APIToken.IsUnknown() {
+	if !data.APIToken.IsNull() {
 		apiToken = data.APIToken.ValueString()
 	}
 	if apiToken == "" {
