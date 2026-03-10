@@ -48,6 +48,8 @@ type CreateTokenOptions struct {
 
 // UpdateTokenOptions are the body parameters for UpdateToken.
 // Fields are omitted from the request when nil, allowing the API to apply its defaults.
+// MaxAge and MaxUnusedPeriod are always included (never omitempty) so that sending
+// null explicitly clears them on the server.
 type UpdateTokenOptions struct {
 	Name             *string  `json:"name,omitempty"`
 	PermCreateDomain *bool    `json:"perm_create_domain,omitempty"`
@@ -55,8 +57,8 @@ type UpdateTokenOptions struct {
 	PermManageTokens *bool    `json:"perm_manage_tokens,omitempty"`
 	AllowedSubnets   []string `json:"allowed_subnets,omitempty"`
 	AutoPolicy       *bool    `json:"auto_policy,omitempty"`
-	MaxAge           *string  `json:"max_age,omitempty"`
-	MaxUnusedPeriod  *string  `json:"max_unused_period,omitempty"`
+	MaxAge           *string  `json:"max_age"`
+	MaxUnusedPeriod  *string  `json:"max_unused_period"`
 }
 
 // CreateToken creates a new API token with the given configuration.

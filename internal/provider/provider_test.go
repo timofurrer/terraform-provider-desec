@@ -10,6 +10,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
+	"github.com/timofurrer/terraform-provider-desec/internal/api"
 	"github.com/timofurrer/terraform-provider-desec/internal/api/fake"
 )
 
@@ -35,6 +36,16 @@ func testAccPreCheck(t *testing.T) {
 // so each test gets its own blank-slate server with no shared state.
 func newTestAccEnv(t *testing.T) (string, map[string]func() (tfprotov6.ProviderServer, error)) {
 	t.Helper()
+	config, factories, _ := newTestAccEnvWithClient(t)
+	return config, factories
+}
+
+// newTestAccEnvWithClient is like newTestAccEnv but also returns an *api.Client
+// configured against the same backend (fake or real). This allows tests to make
+// direct API calls for out-of-band operations such as deleting a resource to
+// test drift detection.
+func newTestAccEnvWithClient(t *testing.T) (string, map[string]func() (tfprotov6.ProviderServer, error), *api.Client) {
+	t.Helper()
 
 	factories := map[string]func() (tfprotov6.ProviderServer, error){
 		"desec": providerserver.NewProtocol6WithError(New("test")()),
@@ -42,7 +53,13 @@ func newTestAccEnv(t *testing.T) (string, map[string]func() (tfprotov6.ProviderS
 
 	if useRealAPI() {
 		// Real API: token and URL come from environment variables.
-		return `provider "desec" {}`, factories
+		apiToken := os.Getenv("DESEC_API_TOKEN")
+		apiURL := os.Getenv("DESEC_API_URL")
+		if apiURL == "" {
+			apiURL = api.DefaultBaseURL
+		}
+		client := api.NewClient(apiURL, apiToken)
+		return `provider "desec" {}`, factories, client
 	}
 
 	// Fake backend: start a fresh server for this test only.
@@ -56,5 +73,6 @@ provider "desec" {
 }
 `, srv.Token(), srv.URL())
 
-	return config, factories
+	client := api.NewClient(srv.URL(), srv.Token())
+	return config, factories, client
 }

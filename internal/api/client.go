@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -127,11 +128,11 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("deSEC API error (HTTP %d): %s", e.StatusCode, e.Body)
 }
 
-// IsNotFound returns true if the error is a 404 Not Found.
+// IsNotFound returns true if the error (or any wrapped error) is a 404 Not Found.
 func IsNotFound(err error) bool {
 	if err == nil {
 		return false
 	}
-	apiErr, ok := err.(*APIError)
-	return ok && apiErr.StatusCode == http.StatusNotFound
+	var apiErr *APIError
+	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound
 }
