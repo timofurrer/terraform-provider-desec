@@ -1,52 +1,85 @@
 # Terraform / OpenTofu Provider for deSEC
 
-TODO
-
-## Requirements
-
-- [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.0
-- [Go](https://golang.org/doc/install) >= 1.24
-
-## Building The Provider
-
-1. Clone the repository
-1. Enter the repository directory
-1. Build the provider using the Go `install` command:
-
-```shell
-go install
-```
-
-## Adding Dependencies
-
-This provider uses [Go modules](https://github.com/golang/go/wiki/Modules).
-Please see the Go documentation for the most up to date information about using Go modules.
-
-To add a new dependency `github.com/author/dependency` to your Terraform provider:
-
-```shell
-go get github.com/author/dependency
-go mod tidy
-```
-
-Then commit the changes to `go.mod` and `go.sum`.
+[deSEC](https://desec.io) is a free, open-source DNS hosting service with a focus on security and privacy. This Terraform/OpenTofu provider lets you manage deSEC resources - DNS domains, record sets, API tokens, and token scoping policies - as infrastructure code.
 
 ## Using the provider
 
-Fill this in for each provider
+Install the provider by adding it to your `required_providers` block:
+
+```hcl
+terraform {
+  required_providers {
+    desec = {
+      source  = "registry.terraform.io/timofurrer/desec"
+      version = "~> 0.1"
+    }
+  }
+}
+```
+
+Configure the provider with your deSEC API token. The token can also be
+supplied via the `DESEC_API_TOKEN` environment variable:
+
+```hcl
+provider "desec" {
+  api_token = "your-desec-api-token"
+}
+```
+
+Create a DNS zone and add records:
+
+```hcl
+resource "desec_domain" "example" {
+  name = "example.com"
+}
+
+resource "desec_record" "www" {
+  domain  = desec_domain.example.name
+  subname = "www"
+  type    = "A"
+  ttl     = 3600
+  records = ["1.2.3.4"]
+}
+```
+
+For the full list of resources, data sources, and configuration options see the
+[provider documentation](docs/).
+
+Then commit the changes to `go.mod` and `go.sum`.
 
 ## Developing the Provider
 
 If you wish to work on the provider, you'll first need [Go](http://www.golang.org) installed on your machine (see [Requirements](#requirements) above).
 
-To compile the provider, run `go install`. This will build the provider and put the provider binary in the `$GOPATH/bin` directory.
+To compile the provider, run `make playground`. This will build the provider and put the provider binary in the `./bin` directory.
+
+Have a look at the `playground` folder to see how to use this development build.
 
 To generate or update documentation, run `make generate`.
 
-In order to run the full suite of Acceptance tests, run `make testacc`.
+### Acceptance tests
 
-*Note:* Acceptance tests create real resources, and often cost money to run.
+By default, acceptance tests run against an in-memory fake deSEC API server.
+No real account or credentials are needed, and each test gets a fresh isolated
+server instance with no shared state:
 
 ```shell
 make testacc
 ```
+
+To run a specific test, use the `RUN` variable:
+
+```shell
+make testacc RUN=TestAccDomainResource
+```
+
+To run against the real deSEC API instead, set `DESEC_REAL_API=1` and provide
+a valid API token via `DESEC_API_TOKEN`. An optional `DESEC_API_URL` override
+is also supported (defaults to `https://desec.io/api/v1`):
+
+```shell
+DESEC_REAL_API=1 DESEC_API_TOKEN=your-token make testacc
+```
+
+**Note:** Running against the real API will create and delete actual resources
+in your deSEC account and may trigger rate limits.
