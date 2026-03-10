@@ -16,6 +16,10 @@ Token policies restrict which DNS records a token may write. A *default* policy 
 ## Example Usage
 
 ```terraform
+resource "desec_domain" "example" {
+  name = "example.dedyn.io"
+}
+
 resource "desec_token" "ci" {
   name = "ci-deploy"
 }
@@ -27,19 +31,19 @@ resource "desec_token_policy" "default" {
   perm_write = false
 }
 
-# Allow the token to write all RRsets within example.com.
+# Allow the token to write all RRsets within the domain.
 resource "desec_token_policy" "example_all" {
   token_id   = desec_token.ci.id
-  domain     = "example.com"
+  domain     = desec_domain.example.name
   perm_write = true
 
   depends_on = [desec_token_policy.default]
 }
 
-# Allow the token to write only the www A record within example.com.
+# Allow the token to write only the www A record within the domain.
 resource "desec_token_policy" "example_www_a" {
   token_id   = desec_token.ci.id
-  domain     = "example.com"
+  domain     = desec_domain.example.name
   subname    = "www"
   type       = "A"
   perm_write = true

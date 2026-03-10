@@ -74,7 +74,7 @@ resource "desec_record" "blog_cname" {
 
 - `domain` (String) The domain name that this record belongs to.
 - `records` (Set of String) The set of record content strings. The format depends on the record type. For example, `A` records contain IPv4 addresses, `MX` records contain `priority hostname.` pairs.
-- `subname` (String) The subdomain part of the record name. Use `@` for the zone apex (root of the domain). Use an empty string or omit for no subdomain (equivalent to `@`).
+- `subname` (String) The subdomain part of the record name. Use `@` or `""` for the zone apex (root of the domain).
 - `ttl` (Number) The TTL (time-to-live) in seconds. Must be at least the domain's `minimum_ttl`.
 - `type` (String) The DNS record type (e.g. `A`, `AAAA`, `CNAME`, `MX`, `TXT`). Must be uppercase.
 
