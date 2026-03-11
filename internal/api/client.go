@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -24,22 +25,45 @@ const (
 	defaultMaxRetries = 5
 )
 
+// ClientOption is a functional option for configuring a Client.
+type ClientOption func(*Client)
+
+// WithMaxRetries sets the maximum number of times a 429 response is retried.
+func WithMaxRetries(n int) ClientOption {
+	return func(c *Client) { c.maxRetries = n }
+}
+
+// WithSerializeRequests controls whether concurrent API requests are serialized
+// per lock key to avoid hitting deSEC rate limits. When enabled (the default),
+// domain-scoped requests are serialized per domain and global DNS requests share
+// a single lock, preventing bursts that exhaust per-domain or global rate limits.
+func WithSerializeRequests(v bool) ClientOption {
+	return func(c *Client) { c.serializeRequests = v }
+}
+
 // Client is a deSEC REST API client.
 type Client struct {
-	BaseURL    string
-	Token      string
-	httpClient *http.Client
-	maxRetries int
+	BaseURL           string
+	Token             string
+	httpClient        *http.Client
+	maxRetries        int
+	serializeRequests bool
+	mu                sync.Map // key -> *sync.Mutex
 }
 
 // NewClient creates a new deSEC API client.
-func NewClient(baseURL, token string) *Client {
-	return &Client{
-		BaseURL:    baseURL,
-		Token:      token,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
-		maxRetries: defaultMaxRetries,
+func NewClient(baseURL, token string, opts ...ClientOption) *Client {
+	c := &Client{
+		BaseURL:           baseURL,
+		Token:             token,
+		httpClient:        &http.Client{Timeout: 30 * time.Second},
+		maxRetries:        defaultMaxRetries,
+		serializeRequests: true,
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 // do executes an HTTP request with automatic rate-limit retry.
@@ -102,6 +126,27 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (*http.R
 	}
 
 	return nil, fmt.Errorf("request rate-limited: still receiving HTTP 429 after %d retries", c.maxRetries)
+}
+
+// doLocked acquires a per-key mutex before calling do(), serializing concurrent
+// requests that share the same lock key. Use the domain name as key for
+// domain-scoped operations, and "" for global DNS operations (e.g. CreateDomain,
+// ListDomains). This prevents bursts that would exhaust deSEC rate limit buckets.
+// When serializeRequests is false the lock is skipped and do() is called directly.
+func (c *Client) doLocked(ctx context.Context, method, path, key string, body any) (*http.Response, error) {
+	if !c.serializeRequests {
+		return c.do(ctx, method, path, body)
+	}
+	mu := c.getMutex(key)
+	mu.Lock()
+	defer mu.Unlock()
+	return c.do(ctx, method, path, body)
+}
+
+// getMutex returns the mutex associated with key, creating it if necessary.
+func (c *Client) getMutex(key string) *sync.Mutex {
+	v, _ := c.mu.LoadOrStore(key, &sync.Mutex{})
+	return v.(*sync.Mutex) //nolint:forcetypeassert
 }
 
 // checkResponse reads and parses an error body from an HTTP response.

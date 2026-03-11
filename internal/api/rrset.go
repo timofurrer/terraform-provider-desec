@@ -61,7 +61,7 @@ type CreateRRsetOptions struct {
 func (c *Client) CreateRRset(ctx context.Context, domain string, opts CreateRRsetOptions) (*RRset, error) {
 	// Normalise subname for the JSON body (apex must be an empty string).
 	opts.Subname = rrsetSubnameForBody(opts.Subname)
-	resp, err := c.do(ctx, http.MethodPost, fmt.Sprintf("/domains/%s/rrsets/", domain), opts)
+	resp, err := c.doLocked(ctx, http.MethodPost, fmt.Sprintf("/domains/%s/rrsets/", domain), domain, opts)
 	if err != nil {
 		return nil, fmt.Errorf("creating rrset %s/%s/%s: %w", domain, opts.Subname, opts.Type, err)
 	}
@@ -80,7 +80,7 @@ func (c *Client) CreateRRset(ctx context.Context, domain string, opts CreateRRse
 
 // GetRRset retrieves a specific RRset by domain, subname, and type.
 func (c *Client) GetRRset(ctx context.Context, domain, subname, rrtype string) (*RRset, error) {
-	resp, err := c.do(ctx, http.MethodGet, rrsetPath(domain, subname, rrtype), nil)
+	resp, err := c.doLocked(ctx, http.MethodGet, rrsetPath(domain, subname, rrtype), domain, nil)
 	if err != nil {
 		return nil, fmt.Errorf("getting rrset %s/%s/%s: %w", domain, subname, rrtype, err)
 	}
@@ -135,7 +135,7 @@ func (c *Client) ListRRsets(ctx context.Context, domain string, opts ListRRsetsO
 			}
 		}
 
-		resp, err := c.do(ctx, http.MethodGet, pagePath, nil)
+		resp, err := c.doLocked(ctx, http.MethodGet, pagePath, domain, nil)
 		if err != nil {
 			return nil, fmt.Errorf("listing rrsets for domain %q: %w", domain, err)
 		}
@@ -165,7 +165,7 @@ type UpdateRRsetOptions struct {
 
 // UpdateRRset updates the TTL and records of an existing RRset.
 func (c *Client) UpdateRRset(ctx context.Context, domain, subname, rrtype string, opts UpdateRRsetOptions) (*RRset, error) {
-	resp, err := c.do(ctx, http.MethodPatch, rrsetPath(domain, subname, rrtype), opts)
+	resp, err := c.doLocked(ctx, http.MethodPatch, rrsetPath(domain, subname, rrtype), domain, opts)
 	if err != nil {
 		return nil, fmt.Errorf("updating rrset %s/%s/%s: %w", domain, subname, rrtype, err)
 	}
@@ -184,7 +184,7 @@ func (c *Client) UpdateRRset(ctx context.Context, domain, subname, rrtype string
 
 // DeleteRRset deletes an RRset by domain, subname, and type.
 func (c *Client) DeleteRRset(ctx context.Context, domain, subname, rrtype string) error {
-	resp, err := c.do(ctx, http.MethodDelete, rrsetPath(domain, subname, rrtype), nil)
+	resp, err := c.doLocked(ctx, http.MethodDelete, rrsetPath(domain, subname, rrtype), domain, nil)
 	if err != nil {
 		return fmt.Errorf("deleting rrset %s/%s/%s: %w", domain, subname, rrtype, err)
 	}

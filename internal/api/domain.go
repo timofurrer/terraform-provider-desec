@@ -38,7 +38,7 @@ type CreateDomainOptions struct {
 
 // CreateDomain creates a new domain (DNS zone) in deSEC.
 func (c *Client) CreateDomain(ctx context.Context, opts CreateDomainOptions) (*Domain, error) {
-	resp, err := c.do(ctx, http.MethodPost, "/domains/", opts)
+	resp, err := c.doLocked(ctx, http.MethodPost, "/domains/", "", opts)
 	if err != nil {
 		return nil, fmt.Errorf("creating domain %q: %w", opts.Name, err)
 	}
@@ -57,7 +57,7 @@ func (c *Client) CreateDomain(ctx context.Context, opts CreateDomainOptions) (*D
 
 // GetDomain retrieves a domain by name.
 func (c *Client) GetDomain(ctx context.Context, name string) (*Domain, error) {
-	resp, err := c.do(ctx, http.MethodGet, "/domains/"+name+"/", nil)
+	resp, err := c.doLocked(ctx, http.MethodGet, "/domains/"+name+"/", name, nil)
 	if err != nil {
 		return nil, fmt.Errorf("getting domain %q: %w", name, err)
 	}
@@ -111,7 +111,7 @@ func (c *Client) ListDomains(ctx context.Context, opts ListDomainsOptions) ([]Do
 			}
 		}
 
-		resp, err := c.do(ctx, http.MethodGet, pagePath, nil)
+		resp, err := c.doLocked(ctx, http.MethodGet, pagePath, "", nil)
 		if err != nil {
 			return nil, fmt.Errorf("listing domains: %w", err)
 		}
@@ -135,7 +135,7 @@ func (c *Client) ListDomains(ctx context.Context, opts ListDomainsOptions) ([]Do
 
 // DeleteDomain deletes a domain by name.
 func (c *Client) DeleteDomain(ctx context.Context, name string) error {
-	resp, err := c.do(ctx, http.MethodDelete, "/domains/"+name+"/", nil)
+	resp, err := c.doLocked(ctx, http.MethodDelete, "/domains/"+name+"/", name, nil)
 	if err != nil {
 		return fmt.Errorf("deleting domain %q: %w", name, err)
 	}
@@ -149,7 +149,7 @@ func (c *Client) DeleteDomain(ctx context.Context, name string) error {
 
 // GetZonefile retrieves the zonefile for a domain.
 func (c *Client) GetZonefile(ctx context.Context, name string) (string, error) {
-	resp, err := c.do(ctx, http.MethodGet, "/domains/"+name+"/zonefile/", nil)
+	resp, err := c.doLocked(ctx, http.MethodGet, "/domains/"+name+"/zonefile/", name, nil)
 	if err != nil {
 		return "", fmt.Errorf("getting zonefile for %q: %w", name, err)
 	}

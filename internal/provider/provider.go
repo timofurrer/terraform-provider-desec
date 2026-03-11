@@ -32,8 +32,10 @@ type desecProvider struct {
 
 // desecProviderModel describes the provider data model.
 type desecProviderModel struct {
-	APIToken types.String `tfsdk:"api_token"`
-	APIURL   types.String `tfsdk:"api_url"`
+	APIToken          types.String `tfsdk:"api_token"`
+	APIURL            types.String `tfsdk:"api_url"`
+	MaxRetries        types.Int64  `tfsdk:"max_retries"`
+	SerializeRequests types.Bool   `tfsdk:"serialize_requests"`
 }
 
 func (p *desecProvider) Metadata(_ context.Context, _ provider.MetadataRequest, resp *provider.MetadataResponse) {
@@ -66,7 +68,9 @@ Read-only access is available for all of the above through matching data sources
 
 ### Rate Limiting
 
-The deSEC API enforces rate limits. The provider automatically retries requests that receive HTTP 429 responses, honouring the ` + "`" + `Retry-After` + "`" + ` header (up to 5 retries per request). See the [deSEC rate limits documentation](https://desec.readthedocs.io/en/latest/rate-limits.html).`,
+The deSEC API enforces rate limits. The provider automatically retries requests that receive HTTP 429 responses, honouring the ` + "`" + `Retry-After` + "`" + ` header (up to 5 retries per request by default, configurable via ` + "`" + `max_retries` + "`" + `). See the [deSEC rate limits documentation](https://desec.readthedocs.io/en/latest/rate-limits.html).
+
+To prevent bursts of concurrent Terraform operations from exhausting deSEC rate limit buckets, the provider serializes API requests by default: domain-scoped requests (RRset operations, per-domain zone operations) are serialized per domain, and global DNS operations (domain creation/listing) share a single lock. This ensures at most one in-flight request per domain at a time, fully respecting the ` + "`" + `dns_api_per_domain_expensive` + "`" + ` (2/s per domain) and ` + "`" + `dns_api_expensive` + "`" + ` (10/s global) limits regardless of Terraform's parallelism setting. Serialization can be disabled via ` + "`" + `serialize_requests = false` + "`" + ` if you manage concurrency externally (e.g. via ` + "`" + `-parallelism=1` + "`" + `).`,
 		Attributes: map[string]schema.Attribute{
 			"api_token": schema.StringAttribute{
 				MarkdownDescription: "The deSEC API token. Can also be set via the `DESEC_API_TOKEN` environment variable.",
@@ -75,6 +79,14 @@ The deSEC API enforces rate limits. The provider automatically retries requests 
 			},
 			"api_url": schema.StringAttribute{
 				MarkdownDescription: "The deSEC API base URL. Defaults to `https://desec.io/api/v1`. Can also be set via the `DESEC_API_URL` environment variable. Can be overridden for custom endpoints or testing.",
+				Optional:            true,
+			},
+			"max_retries": schema.Int64Attribute{
+				MarkdownDescription: "Maximum number of times a request that receives an HTTP 429 response is retried. Defaults to `5`.",
+				Optional:            true,
+			},
+			"serialize_requests": schema.BoolAttribute{
+				MarkdownDescription: "Serialize concurrent API requests to avoid hitting deSEC rate limits. When `true` (the default), domain-scoped requests are serialized per domain and global DNS requests share a single lock. Set to `false` only if you manage concurrency externally (e.g. via `-parallelism=1`).",
 				Optional:            true,
 			},
 		},
@@ -118,7 +130,15 @@ func (p *desecProvider) Configure(ctx context.Context, req provider.ConfigureReq
 		apiURL = data.APIURL.ValueString()
 	}
 
-	client := api.NewClient(apiURL, apiToken)
+	var clientOpts []api.ClientOption
+	if !data.MaxRetries.IsNull() && !data.MaxRetries.IsUnknown() {
+		clientOpts = append(clientOpts, api.WithMaxRetries(int(data.MaxRetries.ValueInt64())))
+	}
+	if !data.SerializeRequests.IsNull() && !data.SerializeRequests.IsUnknown() {
+		clientOpts = append(clientOpts, api.WithSerializeRequests(data.SerializeRequests.ValueBool()))
+	}
+
+	client := api.NewClient(apiURL, apiToken, clientOpts...)
 	resp.DataSourceData = client
 	resp.ResourceData = client
 	resp.EphemeralResourceData = client
