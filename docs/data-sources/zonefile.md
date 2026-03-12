@@ -3,12 +3,28 @@
 page_title: "desec_zonefile Data Source - desec"
 subcategory: ""
 description: |-
-  Exports a deSEC DNS zone as a zonefile.
+  Exports a deSEC DNS zone in RFC 1035 / BIND zone file format.
+  The returned content is plain text. Each resource record is on its own line in the form:
+  
+  <name>  <ttl>  IN  <type>  <rdata>
+  
+  The export includes a comment header line with the domain name and export timestamp. DNSSEC-specific record types (RRSIG, NSEC, NSEC3, etc.) are excluded — only user-managed record types are present.
+  See the deSEC API documentation https://desec.readthedocs.io/en/latest/dns/domains.html#exporting-a-domain-as-zonefile for further details.
 ---
 
 # desec_zonefile (Data Source)
 
-Exports a deSEC DNS zone as a zonefile.
+Exports a deSEC DNS zone in RFC 1035 / BIND zone file format.
+
+The returned content is plain text. Each resource record is on its own line in the form:
+
+```
+<name>  <ttl>  IN  <type>  <rdata>
+```
+
+The export includes a comment header line with the domain name and export timestamp. DNSSEC-specific record types (RRSIG, NSEC, NSEC3, etc.) are excluded — only user-managed record types are present.
+
+See the [deSEC API documentation](https://desec.readthedocs.io/en/latest/dns/domains.html#exporting-a-domain-as-zonefile) for further details.
 
 ## Example Usage
 
@@ -28,4 +44,4 @@ data "desec_zonefile" "example" {
 
 ### Read-Only
 
-- `zonefile` (String) The zonefile content.
+- `zonefile` (String) The zone file content in RFC 1035 / BIND format. Includes all user-managed RRsets. DNSSEC-related types are excluded.

@@ -38,7 +38,12 @@ func (d *zonefileDataSource) Metadata(_ context.Context, req datasource.Metadata
 
 func (d *zonefileDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Exports a deSEC DNS zone as a zonefile.",
+		MarkdownDescription: "Exports a deSEC DNS zone in RFC 1035 / BIND zone file format.\n\n" +
+			"The returned content is plain text. Each resource record is on its own line in the form:\n\n" +
+			"```\n<name>  <ttl>  IN  <type>  <rdata>\n```\n\n" +
+			"The export includes a comment header line with the domain name and export timestamp. " +
+			"DNSSEC-specific record types (RRSIG, NSEC, NSEC3, etc.) are excluded — only user-managed record types are present.\n\n" +
+			"See the [deSEC API documentation](https://desec.readthedocs.io/en/latest/dns/domains.html#exporting-a-domain-as-zonefile) for further details.",
 
 		Attributes: map[string]schema.Attribute{
 			"name": schema.StringAttribute{
@@ -46,7 +51,7 @@ func (d *zonefileDataSource) Schema(_ context.Context, _ datasource.SchemaReques
 				Required:            true,
 			},
 			"zonefile": schema.StringAttribute{
-				MarkdownDescription: "The zonefile content.",
+				MarkdownDescription: "The zone file content in RFC 1035 / BIND format. Includes all user-managed RRsets. DNSSEC-related types are excluded.",
 				Computed:            true,
 			},
 		},
