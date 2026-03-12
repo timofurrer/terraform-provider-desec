@@ -10,6 +10,10 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
+	"github.com/hashicorp/terraform-plugin-testing/statecheck"
+	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 	"github.com/timofurrer/terraform-provider-desec/internal/api"
 	"github.com/timofurrer/terraform-provider-desec/internal/api/fake"
 )
@@ -75,4 +79,66 @@ provider "desec" {
 
 	client := api.NewClient(srv.URL(), srv.Token())
 	return config, factories, client
+}
+
+func TestAccProviderExample_DomainNameservers(t *testing.T) {
+	domainName := testAccDomainName(t, "ns-example")
+	providerConfig, factories := newTestAccEnv(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccProviderExampleDomainNameserversConfig(providerConfig, domainName),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue(
+						"data.desec_record.nameservers",
+						tfjsonpath.New("domain"),
+						knownvalue.StringExact(domainName),
+					),
+					statecheck.ExpectKnownValue(
+						"data.desec_record.nameservers",
+						tfjsonpath.New("subname"),
+						knownvalue.StringExact("@"),
+					),
+					statecheck.ExpectKnownValue(
+						"data.desec_record.nameservers",
+						tfjsonpath.New("type"),
+						knownvalue.StringExact("NS"),
+					),
+					statecheck.ExpectKnownValue(
+						"data.desec_record.nameservers",
+						tfjsonpath.New("records"),
+						knownvalue.SetSizeExact(2),
+					),
+					statecheck.ExpectKnownOutputValue(
+						"nameservers",
+						knownvalue.SetSizeExact(2),
+					),
+				},
+			},
+		},
+	})
+}
+
+func testAccProviderExampleDomainNameserversConfig(providerConfig, domainName string) string {
+	return fmt.Sprintf(`
+%s
+
+resource "desec_domain" "example" {
+  name = %q
+}
+
+data "desec_record" "nameservers" {
+  domain  = desec_domain.example.name
+  subname = "@"
+  type    = "NS"
+}
+
+output "nameservers" {
+  description = "The deSEC nameservers to enter at your domain registrar."
+  value       = data.desec_record.nameservers.records
+}
+`, providerConfig, domainName)
 }

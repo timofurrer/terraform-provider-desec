@@ -53,6 +53,23 @@ provider "desec" {
   # api_url = "https://desec.io/api/v1"  # optional, defaults to the deSEC production API
 }
 
+# Create a domain and retrieve the nameservers assigned by deSEC
+# to enter into your domain registrar settings.
+resource "desec_domain" "example" {
+  name = "example.com"
+}
+
+data "desec_record" "nameservers" {
+  domain  = desec_domain.example.name
+  subname = "@"
+  type    = "NS"
+}
+
+output "nameservers" {
+  description = "The deSEC nameservers to enter at your domain registrar."
+  value       = data.desec_record.nameservers.records
+}
+
 # Lazy provider initialization: use a token created by one provider instance
 # to configure a second provider instance. The second provider's api_token is
 # unknown at plan time, so it is configured lazily at apply time.

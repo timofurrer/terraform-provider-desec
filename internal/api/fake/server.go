@@ -225,7 +225,18 @@ func (s *Server) createDomain(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	s.domains[req.Name] = d
-	s.rrsets[req.Name] = make(map[string]*api.RRset)
+	s.rrsets[req.Name] = map[string]*api.RRset{
+		rrsetKey("", "NS"): {
+			Created: ts,
+			Domain:  req.Name,
+			Subname: "",
+			Name:    req.Name + ".",
+			Type:    "NS",
+			TTL:     minimumTTL,
+			Records: []string{"ns1.desec.io.", "ns2.desec.org."},
+			Touched: ts,
+		},
+	}
 
 	writeJSON(w, http.StatusCreated, d)
 }
