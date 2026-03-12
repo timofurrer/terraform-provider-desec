@@ -1,4 +1,4 @@
-// Copyright (c) Timo Furrer
+// Copyright Timo Furrer 2026
 // SPDX-License-Identifier: MPL-2.0
 
 // Package fake provides an in-memory fake deSEC API server for use in tests.
