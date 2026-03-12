@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 const (
@@ -69,6 +71,8 @@ func NewClient(baseURL, token string, opts ...ClientOption) *Client {
 // do executes an HTTP request with automatic rate-limit retry.
 // On HTTP 429, it reads the Retry-After header and sleeps before retrying.
 func (c *Client) do(ctx context.Context, method, path string, body any) (*http.Response, error) {
+	ctx = tflog.NewSubsystem(ctx, "desec-api")
+
 	var bodyBytes []byte
 	var err error
 
@@ -79,7 +83,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (*http.R
 		}
 	}
 
-	for range c.maxRetries {
+	for attempt := range c.maxRetries {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
@@ -99,10 +103,27 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (*http.R
 			req.Header.Set("Content-Type", "application/json")
 		}
 
+		tflog.SubsystemTrace(ctx, "desec-api", "sending API request", map[string]any{
+			"http_method": method,
+			"url":         c.BaseURL + path,
+			"attempt":     attempt + 1,
+		})
+
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
+			tflog.SubsystemDebug(ctx, "desec-api", "API request failed", map[string]any{
+				"http_method": method,
+				"url":         c.BaseURL + path,
+				"error":       err.Error(),
+			})
 			return nil, fmt.Errorf("executing request: %w", err)
 		}
+
+		tflog.SubsystemTrace(ctx, "desec-api", "received API response", map[string]any{
+			"http_method":      method,
+			"url":              c.BaseURL + path,
+			"http_status_code": resp.StatusCode,
+		})
 
 		if resp.StatusCode != http.StatusTooManyRequests {
 			return resp, nil
@@ -112,11 +133,23 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (*http.R
 		_ = resp.Body.Close()
 
 		waitSeconds := 1
+		retryAfterPresent := false
 		if ra := resp.Header.Get("Retry-After"); ra != "" {
+			retryAfterPresent = true
 			if secs, parseErr := strconv.Atoi(ra); parseErr == nil && secs > 0 {
 				waitSeconds = secs
 			}
 		}
+
+		retryFields := map[string]any{
+			"http_method": method,
+			"url":         c.BaseURL + path,
+			"attempt":     attempt + 1,
+		}
+		if retryAfterPresent {
+			retryFields["retry_after_seconds"] = waitSeconds
+		}
+		tflog.SubsystemDebug(ctx, "desec-api", "rate limited, waiting before retry", retryFields)
 
 		select {
 		case <-ctx.Done():
