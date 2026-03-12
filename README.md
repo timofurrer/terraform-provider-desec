@@ -40,6 +40,17 @@ resource "desec_record" "www" {
   ttl     = 3600
   records = ["1.2.3.4"]
 }
+
+data "desec_record" "nameservers" {
+  domain  = desec_domain.example.name
+  subname = "@"
+  type    = "NS"
+}
+
+output "nameservers" {
+  description = "The deSEC nameservers to enter at your domain registrar."
+  value       = data.desec_record.nameservers.records
+}
 ```
 
 For the full list of resources, data sources, and configuration options see the
