@@ -54,7 +54,7 @@ output "nameservers" {
 ```
 
 For the full list of resources, data sources, and configuration options see the
-[provider documentation](docs/).
+[provider documentation](https://registry.terraform.io/providers/timofurrer/desec/latest/docs).
 
 Then commit the changes to `go.mod` and `go.sum`.
 
