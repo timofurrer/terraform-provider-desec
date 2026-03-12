@@ -1,3 +1,10 @@
+## 0.2.2 (2026-03-12)
+
+### IMPROVEMENTS (2 changes)
+
+- api: Emit structured HTTP request/response trace logs via `TF_LOG_PROVIDER_DESEC=TRACE`
+- docs: Improve `desec_zonefile` data source documentation
+
 ## 0.2.1 (2026-03-12)
 
 ### IMPROVEMENTS (1 change)
