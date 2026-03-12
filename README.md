@@ -60,7 +60,7 @@ Then commit the changes to `go.mod` and `go.sum`.
 
 ## Developing the Provider
 
-If you wish to work on the provider, you'll first need [Go](http://www.golang.org) installed on your machine (see [Requirements](#requirements) above).
+If you wish to work on the provider, you'll first need [Go](http://www.golang.org) installed on your machine.
 
 To compile the provider, run `make playground`. This will build the provider and put the provider binary in the `./bin` directory.
 
