@@ -1,3 +1,9 @@
+## 0.3.1 (2026-03-16)
+
+### IMPROVEMENTS (1 change)
+
+- docs: add examples for DNSSEC relevant outputs / attributes
+
 ## 0.3.0 (2026-03-16)
 
 ### IMPROVEMENTS (2 changes)
