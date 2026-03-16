@@ -96,6 +96,20 @@ resource "desec_records" "from_records" {
   depends_on = [desec_domain.example]
 }
 
+# --- Exclusive mode: delete any records not declared here ---
+
+resource "desec_records" "exclusive" {
+  domain    = desec_domain.example.name
+  exclusive = true
+
+  zonefile = <<-ZONE
+    example.com.      3600 IN A    203.0.113.10
+    www.example.com.  3600 IN A    203.0.113.10
+  ZONE
+
+  depends_on = [desec_domain.example]
+}
+
 # Reference the computed attributes:
 #   desec_records.from_zonefile.records  — structured RRsets (when using Mode A)
 #   desec_records.from_records.zonefile  — canonical zone file (when using Mode B)
@@ -113,6 +127,9 @@ resource "desec_records" "from_records" {
 
 ### Optional
 
+- `exclusive` (Boolean) When `true`, only the declared RRsets may exist on the domain (excluding automatically managed types such as SOA, RRSIG, NSEC*, CDNSKEY, CDS, and apex NS). Any other RRsets found on the domain are deleted.
+
+When `false` (the default), this resource co-exists with other records on the domain and only manages the RRsets explicitly declared in the configuration.
 - `records` (Attributes Set) Structured set of RRset objects.
 
 Mutually exclusive with `zonefile`. When set, the `zonefile` attribute is computed. When `zonefile` is set instead, this attribute is computed from the parsed zone file.
@@ -133,3 +150,22 @@ Required:
 - `subname` (String) The subdomain component. Use `""` or `"@"` for the zone apex.
 - `ttl` (Number) Time-to-live in seconds.
 - `type` (String) The DNS record type (e.g. `A`, `AAAA`, `MX`, `TXT`). Must be uppercase.
+
+## Import
+
+Import is supported using the following syntax:
+
+In Terraform v1.5.0 and later, the [`import` block](https://developer.hashicorp.com/terraform/language/import) can be used with the `id` attribute, for example:
+
+```terraform
+import {
+  to = desec_records.example
+  id = "example.com"
+}
+```
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
+```shell
+terraform import desec_records.from_zonefile example.com
+```

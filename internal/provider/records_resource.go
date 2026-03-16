@@ -16,6 +16,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -54,9 +55,10 @@ type recordsResource struct {
 }
 
 type recordsResourceModel struct {
-	Domain   types.String `tfsdk:"domain"`
-	Zonefile types.String `tfsdk:"zonefile"`
-	Records  types.Set    `tfsdk:"records"`
+	Domain    types.String `tfsdk:"domain"`
+	Exclusive types.Bool   `tfsdk:"exclusive"`
+	Zonefile  types.String `tfsdk:"zonefile"`
+	Records   types.Set    `tfsdk:"records"`
 }
 
 type recordsRRsetModel struct {
@@ -88,6 +90,16 @@ func (r *recordsResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
+			},
+			"exclusive": schema.BoolAttribute{
+				MarkdownDescription: "When `true`, only the declared RRsets may exist on the domain " +
+					"(excluding automatically managed types such as SOA, RRSIG, NSEC*, CDNSKEY, CDS, " +
+					"and apex NS). Any other RRsets found on the domain are deleted.\n\n" +
+					"When `false` (the default), this resource co-exists with other records on the domain " +
+					"and only manages the RRsets explicitly declared in the configuration.",
+				Optional: true,
+				Computed: true,
+				Default:  booldefault.StaticBool(false),
 			},
 			"zonefile": schema.StringAttribute{
 				MarkdownDescription: "Zone file content in RFC 1035 / BIND format.\n\n" +
@@ -199,7 +211,19 @@ func (r *recordsResource) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 
-	returned, err := r.client.BulkPatchRRsets(ctx, domain, rrsetsToBulkEntries(rrsets))
+	entries := rrsetsToPutEntries(rrsets)
+
+	if data.Exclusive.ValueBool() {
+		allRRsets, err := r.client.ListRRsets(ctx, domain, api.ListRRsetsOptions{})
+		if err != nil && !api.IsNotFound(err) {
+			resp.Diagnostics.AddError("Error Listing Records",
+				fmt.Sprintf("Unable to list records for domain %q: %s", domain, err))
+			return
+		}
+		entries = append(entries, deletionEntriesForExtras(allRRsets, rrsets)...)
+	}
+
+	returned, err := r.client.BulkPutRRsets(ctx, domain, entries)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Creating Records",
 			fmt.Sprintf("Unable to create records for domain %q: %s", domain, err))
@@ -233,7 +257,8 @@ func (r *recordsResource) Read(ctx context.Context, req resource.ReadRequest, re
 
 	var managed []api.RRset
 
-	if data.Records.IsNull() || data.Records.IsUnknown() || len(data.Records.Elements()) == 0 {
+	importCase := data.Records.IsNull() || data.Records.IsUnknown() || len(data.Records.Elements()) == 0
+	if importCase || data.Exclusive.ValueBool() {
 		for _, rs := range allRRsets {
 			rrtype := dns.StringToType[rs.Type]
 			if autoManagedRRTypes[rrtype] {
@@ -309,18 +334,19 @@ func (r *recordsResource) Update(ctx context.Context, req resource.UpdateRequest
 		newSet[rrKey{rs.Subname, rs.Type}] = true
 	}
 
-	entries := rrsetsToBulkEntries(newRRsets)
+	entries := rrsetsToPutEntries(newRRsets)
 	for _, rs := range oldRRsets {
 		if !newSet[rrKey{rs.Subname, rs.Type}] {
-			entries = append(entries, api.BulkPatchRRsetEntry{
+			entries = append(entries, api.BulkPutRRsetEntry{
 				Subname: rs.Subname,
 				Type:    rs.Type,
+				TTL:     rs.TTL,
 				Records: []string{},
 			})
 		}
 	}
 
-	returned, err := r.client.BulkPatchRRsets(ctx, domain, entries)
+	returned, err := r.client.BulkPutRRsets(ctx, domain, entries)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Updating Records",
 			fmt.Sprintf("Unable to update records for domain %q: %s", domain, err))
@@ -349,16 +375,17 @@ func (r *recordsResource) Delete(ctx context.Context, req resource.DeleteRequest
 		return
 	}
 
-	entries := make([]api.BulkPatchRRsetEntry, len(stateRRsets))
+	entries := make([]api.BulkPutRRsetEntry, len(stateRRsets))
 	for i, rs := range stateRRsets {
-		entries[i] = api.BulkPatchRRsetEntry{
+		entries[i] = api.BulkPutRRsetEntry{
 			Subname: rs.Subname,
 			Type:    rs.Type,
+			TTL:     rs.TTL,
 			Records: []string{},
 		}
 	}
 
-	if _, err := r.client.BulkPatchRRsets(ctx, data.Domain.ValueString(), entries); err != nil {
+	if _, err := r.client.BulkPutRRsets(ctx, data.Domain.ValueString(), entries); err != nil {
 		if api.IsNotFound(err) {
 			return
 		}
@@ -551,16 +578,44 @@ func rrsetSetsEqual(a, b []api.RRset) bool {
 	return true
 }
 
-func rrsetsToBulkEntries(rrsets []api.RRset) []api.BulkPatchRRsetEntry {
-	entries := make([]api.BulkPatchRRsetEntry, len(rrsets))
+func rrsetsToPutEntries(rrsets []api.RRset) []api.BulkPutRRsetEntry {
+	entries := make([]api.BulkPutRRsetEntry, len(rrsets))
 	for i, rs := range rrsets {
-		ttl := rs.TTL
-		entries[i] = api.BulkPatchRRsetEntry{
+		entries[i] = api.BulkPutRRsetEntry{
 			Subname: rs.Subname,
 			Type:    rs.Type,
-			TTL:     &ttl,
+			TTL:     rs.TTL,
 			Records: rs.Records,
 		}
+	}
+	return entries
+}
+
+func deletionEntriesForExtras(allRRsets []api.RRset, configured []api.RRset) []api.BulkPutRRsetEntry {
+	type rrKey struct{ subname, rrtype string }
+	wanted := make(map[rrKey]bool, len(configured))
+	for _, rs := range configured {
+		wanted[rrKey{rs.Subname, rs.Type}] = true
+	}
+
+	var entries []api.BulkPutRRsetEntry
+	for _, rs := range allRRsets {
+		rrtype := dns.StringToType[rs.Type]
+		if autoManagedRRTypes[rrtype] {
+			continue
+		}
+		if isApexNS(rs.Subname, rs.Type) {
+			continue
+		}
+		if wanted[rrKey{rs.Subname, rs.Type}] {
+			continue
+		}
+		entries = append(entries, api.BulkPutRRsetEntry{
+			Subname: rs.Subname,
+			Type:    rs.Type,
+			TTL:     rs.TTL,
+			Records: []string{},
+		})
 	}
 	return entries
 }

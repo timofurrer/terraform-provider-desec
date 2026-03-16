@@ -182,24 +182,23 @@ func (c *Client) UpdateRRset(ctx context.Context, domain, subname, rrtype string
 	return &rrset, nil
 }
 
-// BulkPatchRRsetEntry is a single entry in a bulk PATCH request.
-// An empty Records slice signals deletion of that RRset.
-type BulkPatchRRsetEntry struct {
+// BulkPutRRsetEntry is a single entry in a bulk PUT request.
+// All fields are required. An empty Records slice signals deletion of that RRset.
+type BulkPutRRsetEntry struct {
 	Subname string   `json:"subname"`
 	Type    string   `json:"type"`
-	TTL     *int     `json:"ttl,omitempty"`
+	TTL     int      `json:"ttl"`
 	Records []string `json:"records"`
 }
 
-// BulkPatchRRsets performs an atomic bulk PATCH on a domain's RRsets.
+// BulkPutRRsets performs an atomic bulk PUT on a domain's RRsets.
+// All fields (subname, type, ttl, records) are required for each entry.
 // Entries with an empty Records slice are deleted; others are created or updated.
 // Returns the RRsets that were created or updated (deletions are not included).
-func (c *Client) BulkPatchRRsets(ctx context.Context, domain string, rrsets []BulkPatchRRsetEntry) ([]RRset, error) {
-	// Normalise subnames and ensure Records is never nil (nil → null in JSON, which
-	// is treated differently from [] by the API: [] means delete, null means patch).
-	entries := make([]BulkPatchRRsetEntry, len(rrsets))
+func (c *Client) BulkPutRRsets(ctx context.Context, domain string, rrsets []BulkPutRRsetEntry) ([]RRset, error) {
+	entries := make([]BulkPutRRsetEntry, len(rrsets))
 	for i, rs := range rrsets {
-		e := BulkPatchRRsetEntry{
+		e := BulkPutRRsetEntry{
 			Subname: rrsetSubnameForBody(rs.Subname),
 			Type:    rs.Type,
 			TTL:     rs.TTL,
@@ -211,19 +210,19 @@ func (c *Client) BulkPatchRRsets(ctx context.Context, domain string, rrsets []Bu
 		entries[i] = e
 	}
 
-	resp, err := c.doLocked(ctx, http.MethodPatch, fmt.Sprintf("/domains/%s/rrsets/", domain), domain, entries)
+	resp, err := c.doLocked(ctx, http.MethodPut, fmt.Sprintf("/domains/%s/rrsets/", domain), domain, entries)
 	if err != nil {
-		return nil, fmt.Errorf("bulk patching rrsets for domain %q: %w", domain, err)
+		return nil, fmt.Errorf("bulk putting rrsets for domain %q: %w", domain, err)
 	}
 	defer resp.Body.Close() //nolint:errcheck
 
 	if err := checkResponse(resp, http.StatusOK); err != nil {
-		return nil, fmt.Errorf("bulk patching rrsets for domain %q: %w", domain, err)
+		return nil, fmt.Errorf("bulk putting rrsets for domain %q: %w", domain, err)
 	}
 
 	var result []RRset
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decoding bulk patch rrsets response: %w", err)
+		return nil, fmt.Errorf("decoding bulk put rrsets response: %w", err)
 	}
 	return result, nil
 }

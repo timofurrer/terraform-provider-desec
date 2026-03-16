@@ -156,6 +156,78 @@ func TestAccProviderExample_DNSSEC(t *testing.T) {
 	})
 }
 
+func TestAccProviderExample_BulkRecords(t *testing.T) {
+	domainName := testAccDomainName(t, "bulk-records-example")
+	providerConfig, factories := newTestAccEnv(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccProviderExampleBulkRecordsConfig(providerConfig, domainName),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue(
+						"desec_records.bulk_example",
+						tfjsonpath.New("records"),
+						knownvalue.SetSizeExact(3),
+					),
+					statecheck.ExpectKnownValue(
+						"desec_records.bulk_example",
+						tfjsonpath.New("exclusive"),
+						knownvalue.Bool(true),
+					),
+					statecheck.ExpectKnownOutputValue(
+						"managed_zonefile",
+						knownvalue.NotNull(),
+					),
+				},
+			},
+		},
+	})
+}
+
+func testAccProviderExampleBulkRecordsConfig(providerConfig, domainName string) string {
+	return fmt.Sprintf(`
+%s
+
+resource "desec_domain" "bulk_example" {
+  name = %q
+}
+
+resource "desec_records" "bulk_example" {
+  domain    = desec_domain.bulk_example.name
+  exclusive = true
+
+  records = [
+    {
+      subname = ""
+      type    = "A"
+      ttl     = 3600
+      records = ["203.0.113.10"]
+    },
+    {
+      subname = "www"
+      type    = "A"
+      ttl     = 3600
+      records = ["203.0.113.10"]
+    },
+    {
+      subname = ""
+      type    = "MX"
+      ttl     = 3600
+      records = ["10 mail.example.com."]
+    },
+  ]
+}
+
+output "managed_zonefile" {
+  description = "The canonical zone file computed from the structured records."
+  value       = desec_records.bulk_example.zonefile
+}
+`, providerConfig, domainName)
+}
+
 func testAccProviderExampleDNSSECConfig(providerConfig, domainName string) string {
 	return fmt.Sprintf(`
 %s

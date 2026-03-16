@@ -68,6 +68,20 @@ resource "desec_records" "from_records" {
   depends_on = [desec_domain.example]
 }
 
+# --- Exclusive mode: delete any records not declared here ---
+
+resource "desec_records" "exclusive" {
+  domain    = desec_domain.example.name
+  exclusive = true
+
+  zonefile = <<-ZONE
+    example.com.      3600 IN A    203.0.113.10
+    www.example.com.  3600 IN A    203.0.113.10
+  ZONE
+
+  depends_on = [desec_domain.example]
+}
+
 # Reference the computed attributes:
 #   desec_records.from_zonefile.records  — structured RRsets (when using Mode A)
 #   desec_records.from_records.zonefile  — canonical zone file (when using Mode B)

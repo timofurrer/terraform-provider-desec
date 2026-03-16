@@ -102,3 +102,42 @@ output "idn_domain_unicode" {
   description = "The IDN domain name in human-readable unicode form."
   value       = provider::desec::from_punycode(desec_domain.idn_example.name)
 }
+
+# Bulk DNS record management: use desec_records to manage multiple RRsets at
+# once, either via a zone file or structured records. With exclusive = true,
+# any records on the domain not declared here are deleted — ensuring no
+# unmanaged records exist.
+resource "desec_domain" "bulk_example" {
+  name = "bulk.example.dedyn.io"
+}
+
+resource "desec_records" "bulk_example" {
+  domain    = desec_domain.bulk_example.name
+  exclusive = true
+
+  records = [
+    {
+      subname = ""
+      type    = "A"
+      ttl     = 3600
+      records = ["203.0.113.10"]
+    },
+    {
+      subname = "www"
+      type    = "A"
+      ttl     = 3600
+      records = ["203.0.113.10"]
+    },
+    {
+      subname = ""
+      type    = "MX"
+      ttl     = 3600
+      records = ["10 mail.example.com."]
+    },
+  ]
+}
+
+output "managed_zonefile" {
+  description = "The canonical zone file computed from the structured records."
+  value       = desec_records.bulk_example.zonefile
+}

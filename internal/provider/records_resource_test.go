@@ -330,6 +330,187 @@ resource "desec_records" "test" {
 	})
 }
 
+func TestAccRecordsResource_exclusiveDeletesExtras(t *testing.T) {
+	domainName := testAccDomainName(t, "rec-xdel")
+	providerConfig, factories := newTestAccEnv(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			// Step 1: Create a domain with an extra record via desec_record.
+			{
+				Config: fmt.Sprintf(`
+%s
+
+resource "desec_domain" "test" {
+  name = %q
+}
+
+resource "desec_record" "extra" {
+  domain  = desec_domain.test.name
+  subname = "extra"
+  type    = "A"
+  ttl     = 3600
+  records = ["9.9.9.9"]
+}
+`, providerConfig, domainName),
+			},
+			// Step 2: Create desec_records with exclusive=true, managing only
+			// www A. The pre-existing "extra" A record should be deleted.
+			{
+				Config: fmt.Sprintf(`
+%s
+
+resource "desec_domain" "test" {
+  name = %q
+}
+
+resource "desec_records" "test" {
+  domain    = desec_domain.test.name
+  exclusive = true
+  zonefile  = "www.%s. 3600 IN A 1.2.3.4\n"
+
+  depends_on = [desec_domain.test]
+}
+`, providerConfig, domainName, domainName),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("desec_records.test",
+						tfjsonpath.New("records"), knownvalue.SetSizeExact(1)),
+				},
+			},
+		},
+	})
+}
+
+func TestAccRecordsResource_exclusiveDrift(t *testing.T) {
+	domainName := testAccDomainName(t, "rec-xdrift")
+	providerConfig, factories, client := newTestAccEnvWithClient(t)
+
+	config := fmt.Sprintf(`
+%s
+
+resource "desec_domain" "test" {
+  name = %q
+}
+
+resource "desec_records" "test" {
+  domain    = desec_domain.test.name
+  exclusive = true
+  zonefile  = "www.%s. 3600 IN A 1.2.3.4\n"
+
+  depends_on = [desec_domain.test]
+}
+`, providerConfig, domainName, domainName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("desec_records.test",
+						tfjsonpath.New("records"), knownvalue.SetSizeExact(1)),
+				},
+			},
+			// Add an out-of-band record via the API.
+			{
+				PreConfig: func() {
+					_, err := client.CreateRRset(t.Context(), domainName, api.CreateRRsetOptions{
+						Subname: "rogue",
+						Type:    "A",
+						TTL:     3600,
+						Records: []string{"6.6.6.6"},
+					})
+					if err != nil {
+						t.Fatalf("out-of-band create failed: %v", err)
+					}
+				},
+				// Read picks up the rogue record (exclusive mode), plan shows a diff.
+				Config:             config,
+				PlanOnly:           true,
+				ExpectNonEmptyPlan: true,
+			},
+			// Apply deletes the rogue record.
+			{
+				Config: config,
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("desec_records.test",
+						tfjsonpath.New("records"), knownvalue.SetSizeExact(1)),
+				},
+			},
+		},
+	})
+}
+
+func TestAccRecordsResource_exclusiveSwitchOn(t *testing.T) {
+	domainName := testAccDomainName(t, "rec-xswitch")
+	providerConfig, factories := newTestAccEnv(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			// Step 1: Create with exclusive=false plus an independent desec_record.
+			{
+				Config: fmt.Sprintf(`
+%s
+
+resource "desec_domain" "test" {
+  name = %q
+}
+
+resource "desec_records" "test" {
+  domain    = desec_domain.test.name
+  exclusive = false
+  zonefile  = "www.%s. 3600 IN A 1.2.3.4\n"
+
+  depends_on = [desec_domain.test]
+}
+
+resource "desec_record" "other" {
+  domain  = desec_domain.test.name
+  subname = "other"
+  type    = "A"
+  ttl     = 3600
+  records = ["8.8.8.8"]
+}
+`, providerConfig, domainName, domainName),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("desec_records.test",
+						tfjsonpath.New("records"), knownvalue.SetSizeExact(1)),
+					statecheck.ExpectKnownValue("desec_record.other",
+						tfjsonpath.New("subname"), knownvalue.StringExact("other")),
+				},
+			},
+			// Step 2: Switch to exclusive=true, remove the desec_record.
+			// The "other" A record should be deleted by desec_records.
+			{
+				Config: fmt.Sprintf(`
+%s
+
+resource "desec_domain" "test" {
+  name = %q
+}
+
+resource "desec_records" "test" {
+  domain    = desec_domain.test.name
+  exclusive = true
+  zonefile  = "www.%s. 3600 IN A 1.2.3.4\n"
+
+  depends_on = [desec_domain.test]
+}
+`, providerConfig, domainName, domainName),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("desec_records.test",
+						tfjsonpath.New("records"), knownvalue.SetSizeExact(1)),
+				},
+			},
+		},
+	})
+}
+
 func TestAccRecordsResource_bothZonefileAndRecords(t *testing.T) {
 	domainName := testAccDomainName(t, "records-both")
 	providerConfig, factories := newTestAccEnv(t)
