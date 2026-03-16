@@ -6,6 +6,7 @@ package provider
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
@@ -120,6 +121,59 @@ func TestAccProviderExample_DomainNameservers(t *testing.T) {
 			},
 		},
 	})
+}
+
+func TestAccProviderExample_DNSSEC(t *testing.T) {
+	domainName := testAccDomainName(t, "dnssec-example")
+	providerConfig, factories := newTestAccEnv(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccProviderExampleDNSSECConfig(providerConfig, domainName),
+				ConfigStateChecks: []statecheck.StateCheck{
+					// DS records are a flat list of strings with the format:
+					// "<keytag> <algorithm> <digest_type> <hex_digest>"
+					statecheck.ExpectKnownOutputValue(
+						"dnssec_ds_records",
+						knownvalue.ListPartial(map[int]knownvalue.Check{
+							0: knownvalue.StringRegexp(regexp.MustCompile(`^\d+ \d+ \d+ [0-9a-fA-F]+$`)),
+						}),
+					),
+					// DNSKEY records have the format:
+					// "<flags> <protocol> <algorithm> <base64_public_key>"
+					statecheck.ExpectKnownOutputValue(
+						"dnssec_dnskeys",
+						knownvalue.ListPartial(map[int]knownvalue.Check{
+							0: knownvalue.StringRegexp(regexp.MustCompile(`^\d+ \d+ \d+ [A-Za-z0-9+/]+=*$`)),
+						}),
+					),
+				},
+			},
+		},
+	})
+}
+
+func testAccProviderExampleDNSSECConfig(providerConfig, domainName string) string {
+	return fmt.Sprintf(`
+%s
+
+resource "desec_domain" "example" {
+  name = %q
+}
+
+output "dnssec_ds_records" {
+  description = "DS records for DNSSEC delegation — enter these at your domain registrar."
+  value       = flatten([for key in desec_domain.example.keys : key.ds if key.managed])
+}
+
+output "dnssec_dnskeys" {
+  description = "DNSKEY public key records for the domain."
+  value       = [for key in desec_domain.example.keys : key.dnskey if key.managed]
+}
+`, providerConfig, domainName)
 }
 
 func testAccProviderExampleDomainNameserversConfig(providerConfig, domainName string) string {

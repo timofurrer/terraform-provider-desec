@@ -20,6 +20,20 @@ output "nameservers" {
   value       = data.desec_record.nameservers.records
 }
 
+# DNSSEC: once the domain is delegated to deSEC nameservers, retrieve the
+# DS records and DNSKEY public key to register with your domain registrar
+# to enable DNSSEC validation.
+output "dnssec_ds_records" {
+  description = "DS records for DNSSEC delegation — enter these at your domain registrar."
+  value       = flatten([for key in desec_domain.example.keys : key.ds if key.managed])
+}
+
+# The DNSKEY public key can be used to verify DNSSEC is correctly configured.
+output "dnssec_dnskeys" {
+  description = "DNSKEY public key records for the domain."
+  value       = [for key in desec_domain.example.keys : key.dnskey if key.managed]
+}
+
 # Lazy provider initialization: use a token created by one provider instance
 # to configure a second provider instance. The second provider's api_token is
 # unknown at plan time, so it is configured lazily at apply time.

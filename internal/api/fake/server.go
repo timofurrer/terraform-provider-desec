@@ -229,8 +229,8 @@ func (s *Server) createDomain(w http.ResponseWriter, r *http.Request) {
 		Touched:    ts,
 		Keys: []api.Key{
 			{
-				DNSKey:  "257 3 13 FakeKey==",
-				DS:      []string{"12345 13 2 fakeds256hash", "12345 13 4 fakeds384hash"},
+				DNSKey:  "257 3 13 bm90YXJlYWxrZXk=",
+				DS:      []string{"12345 13 2 aabbccddeeff00112233445566778899aabbccddeeff001122334455667788", "12345 13 4 aabbccddeeff00112233445566778899aabbccddeeff001122334455667788990011223344556677889900aabbccdd"},
 				Managed: true,
 			},
 		},
