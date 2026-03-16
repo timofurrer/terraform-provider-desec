@@ -6,6 +6,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -110,6 +111,109 @@ resource "desec_domain" "test" {
   name = %q
 }
 `, providerConfig, name)
+}
+
+// TestAccDomainResource_Punycode verifies that a domain name in Punycode /
+// ACE form (e.g. "xn--mnchen-3ya" — the Punycode encoding of "münchen") is
+// accepted and round-trips through the API unchanged.
+//
+// "xn--mnchen-3ya" is the Punycode encoding of the German word "münchen".
+// Using it as a label in a dedyn.io subdomain gives a fully valid DNS name
+// that can be registered against the real deSEC API.
+func TestAccDomainResource_Punycode(t *testing.T) {
+	// testAccDomainName with a punycode suffix produces:
+	//   fake mode : xn--mnchen-3ya.example.com
+	//   real API  : tf-acc-xn--mnchen-3ya-<test>-<random>.dedyn.io
+	domainName := testAccDomainName(t, "xn--mnchen-3ya")
+	providerConfig, factories := newTestAccEnv(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			// Create and Read: the Punycode name must round-trip unchanged.
+			{
+				Config: testAccDomainResourceConfig(providerConfig, domainName),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue(
+						"desec_domain.test",
+						tfjsonpath.New("id"),
+						knownvalue.StringExact(domainName),
+					),
+					statecheck.ExpectKnownValue(
+						"desec_domain.test",
+						tfjsonpath.New("name"),
+						knownvalue.StringExact(domainName),
+					),
+					statecheck.ExpectKnownValue(
+						"desec_domain.test",
+						tfjsonpath.New("minimum_ttl"),
+						knownvalue.NotNull(),
+					),
+					statecheck.ExpectKnownValue(
+						"desec_domain.test",
+						tfjsonpath.New("keys"),
+						knownvalue.NotNull(),
+					),
+				},
+			},
+			// ImportState: the imported name must also be the Punycode form.
+			{
+				ResourceName:            "desec_domain.test",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"published", "touched"},
+			},
+		},
+	})
+}
+
+// TestAccDomainResource_UnicodeRejected verifies that supplying a domain name
+// with non-ASCII (unicode/umlaut) characters is rejected at plan time with a
+// clear, actionable error message directing the user to use Punycode instead.
+//
+// deSEC only accepts IDN domains in Punycode form; the provider enforces this
+// up-front so users get a helpful error rather than an opaque API 400.
+//
+// testAccDomainName with a unicode suffix produces a name that contains a
+// non-ASCII character in both fake and real-API mode:
+//
+//	fake mode : münchen.example.com
+//	real API  : tf-acc-münchen-<test>-<random>.dedyn.io
+func TestAccDomainResource_UnicodeRejected(t *testing.T) {
+	// Use testAccDomainName so the name follows the same pattern as all other
+	// tests (example.com in fake mode, dedyn.io in real-API mode). The unicode
+	// suffix ensures the name contains a non-ASCII character in both modes.
+	domainName := testAccDomainName(t, "münchen")
+	providerConfig, factories := newTestAccEnv(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccDomainResourceConfig(providerConfig, domainName),
+				// The provider must reject this at plan time with the exact
+				// error title, explanation, and actionable to_punycode()
+				// suggestion. (?s) makes . match newlines so the full
+				// multi-line diagnostic body is covered. Terraform may
+				// word-wrap long lines, so each distinct sentence or clause
+				// is matched separately with .* in between.
+				ExpectError: regexp.MustCompile(
+					`(?s)Non-ASCII characters in domain name` +
+						`.*The domain name` +
+						`.*` + regexp.QuoteMeta(domainName) +
+						`.*contains` +
+						`.*non-ASCII characters` +
+						`.*only accepts domain names in Punycode \(ACE\) form\.` +
+						`.*Use the provider::desec::to_punycode\(\) function to convert it automatically:` +
+						`.*provider::desec::to_punycode\(` +
+						`.*` + regexp.QuoteMeta(domainName) +
+						`.*\)`,
+				),
+			},
+		},
+	})
 }
 
 // TestAccDomainResource_OutOfBandDelete verifies that when a domain is deleted

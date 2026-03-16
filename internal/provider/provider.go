@@ -9,6 +9,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/ephemeral"
+	"github.com/hashicorp/terraform-plugin-framework/function"
 	"github.com/hashicorp/terraform-plugin-framework/list"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
@@ -19,6 +20,7 @@ import (
 
 // Ensure DesecProvider satisfies the provider interface.
 var _ provider.Provider = (*desecProvider)(nil)
+var _ provider.ProviderWithFunctions = (*desecProvider)(nil)
 var _ provider.ProviderWithEphemeralResources = (*desecProvider)(nil)
 var _ provider.ProviderWithListResources = (*desecProvider)(nil)
 
@@ -65,6 +67,10 @@ Read-only access is available for all of the above through matching data sources
 ### List Resources
 
 ` + "`" + `desec_domain` + "`" + `, ` + "`" + `desec_record` + "`" + `, ` + "`" + `desec_token` + "`" + `, and ` + "`" + `desec_token_policy` + "`" + ` are also available as list resources for bulk import and enumeration workflows.
+
+### Functions
+
+` + "`" + `provider::desec::to_punycode()` + "`" + ` and ` + "`" + `provider::desec::from_punycode()` + "`" + ` convert domain names between unicode (human-readable) and [Punycode](https://en.wikipedia.org/wiki/Punycode) (ACE) form. The deSEC API only accepts domain names in Punycode form, so these functions are useful when working with Internationalized Domain Names (IDN) containing non-ASCII characters such as umlauts.
 
 ### Rate Limiting
 
@@ -143,6 +149,13 @@ func (p *desecProvider) Configure(ctx context.Context, req provider.ConfigureReq
 	resp.ResourceData = client
 	resp.EphemeralResourceData = client
 	resp.ListResourceData = client
+}
+
+func (p *desecProvider) Functions(_ context.Context) []func() function.Function {
+	return []func() function.Function{
+		newToPunycodeFunction,
+		newFromPunycodeFunction,
+	}
 }
 
 func (p *desecProvider) Resources(_ context.Context) []func() resource.Resource {

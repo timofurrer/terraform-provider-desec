@@ -201,6 +201,17 @@ func (s *Server) createDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Reject domain names with non-ASCII characters, mirroring real deSEC
+	// behaviour: IDN domains must be supplied in Punycode form.
+	for label := range strings.SplitSeq(strings.TrimSuffix(req.Name, "."), ".") {
+		for i := 0; i < len(label); i++ {
+			if label[i] > 127 {
+				http.Error(w, `{"name":["Enter a valid value."]}`, http.StatusBadRequest)
+				return
+			}
+		}
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

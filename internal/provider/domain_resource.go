@@ -6,6 +6,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -17,9 +18,62 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/timofurrer/terraform-provider-desec/internal/api"
+	"golang.org/x/net/idna"
 )
+
+// asciiDomainNameValidator rejects domain names that contain non-ASCII
+// characters. deSEC only accepts IDN domains in their Punycode (ACE) form
+// (labels beginning with "xn--"). Unicode labels such as those containing
+// umlauts must be converted to Punycode before use.
+type asciiDomainNameValidator struct{}
+
+var _ validator.String = asciiDomainNameValidator{}
+
+func (v asciiDomainNameValidator) Description(_ context.Context) string {
+	return "Domain name must use only ASCII characters. IDN/unicode domains must be in Punycode form (e.g. \"xn--mnchen-3ya.de\" instead of \"münchen.de\")."
+}
+
+func (v asciiDomainNameValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v asciiDomainNameValidator) ValidateString(_ context.Context, req validator.StringRequest, resp *validator.StringResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+	name := req.ConfigValue.ValueString()
+
+	// Use idna.Lookup.ToASCII — the same profile used by to_punycode — to
+	// detect whether the name contains non-ASCII labels and to compute the
+	// correct Punycode form for the error suggestion.
+	punycode, err := idna.Lookup.ToASCII(strings.TrimSuffix(name, "."))
+	if err != nil {
+		// The name is structurally invalid beyond just being non-ASCII.
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid domain name",
+			fmt.Sprintf("The domain name %q is not a valid DNS name: %s.", name, err),
+		)
+		return
+	}
+
+	if punycode != strings.TrimSuffix(name, ".") {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Non-ASCII characters in domain name",
+			fmt.Sprintf(
+				"The domain name %q contains non-ASCII characters. "+
+					"deSEC only accepts domain names in Punycode (ACE) form.\n\n"+
+					"Use the provider::desec::to_punycode() function to convert it automatically:\n\n"+
+					"  name = provider::desec::to_punycode(%q)",
+				name, name,
+			),
+		)
+	}
+}
 
 // Ensure DomainResource fully satisfies framework interfaces.
 var _ resource.Resource = (*domainResource)(nil)
@@ -87,10 +141,14 @@ func (r *domainResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				},
 			},
 			"name": schema.StringAttribute{
-				MarkdownDescription: "The domain name (e.g. `example.com`). Must be unique and is immutable after creation.",
-				Required:            true,
+				MarkdownDescription: "The domain name (e.g. `example.com`). Must be unique and is immutable after creation. " +
+					"IDN/unicode domains must be provided in their Punycode form (e.g. `xn--mnchen-3ya.de`).",
+				Required: true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
+				},
+				Validators: []validator.String{
+					asciiDomainNameValidator{},
 				},
 			},
 			"minimum_ttl": schema.Int64Attribute{

@@ -29,7 +29,7 @@ output "ds_records" {
 
 ### Required
 
-- `name` (String) The domain name (e.g. `example.com`). Must be unique and is immutable after creation.
+- `name` (String) The domain name (e.g. `example.com`). Must be unique and is immutable after creation. IDN/unicode domains must be provided in their Punycode form (e.g. `xn--mnchen-3ya.de`).
 
 ### Read-Only
 

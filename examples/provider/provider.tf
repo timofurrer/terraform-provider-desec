@@ -75,3 +75,16 @@ resource "desec_record" "example_a" {
 
   depends_on = [desec_token_policy.lazy_token_domain]
 }
+
+# Internationalized Domain Names (IDN): use to_punycode() to convert a unicode
+# domain name to its Punycode (ACE) form before registering it with deSEC.
+# The deSEC API only accepts domain names in Punycode form.
+resource "desec_domain" "idn_example" {
+  name = provider::desec::to_punycode("münchen.de")
+}
+
+# from_punycode() converts back to the human-readable unicode form for display.
+output "idn_domain_unicode" {
+  description = "The IDN domain name in human-readable unicode form."
+  value       = provider::desec::from_punycode(desec_domain.idn_example.name)
+}

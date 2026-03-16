@@ -11,6 +11,8 @@ description: |-
   ephemeral "desec_token" creates a short-lived token for use within a single Terraform/OpenTofu run. By default the token is deleted on close; set keep_on_close = true to retain it after the run completes.
   List Resources
   desec_domain, desec_record, desec_token, and desec_token_policy are also available as list resources for bulk import and enumeration workflows.
+  Functions
+  provider::desec::to_punycode() and provider::desec::from_punycode() convert domain names between unicode (human-readable) and Punycode https://en.wikipedia.org/wiki/Punycode (ACE) form. The deSEC API only accepts domain names in Punycode form, so these functions are useful when working with Internationalized Domain Names (IDN) containing non-ASCII characters such as umlauts.
   Rate Limiting
   The deSEC API enforces rate limits. The provider automatically retries requests that receive HTTP 429 responses, honouring the Retry-After header (up to 5 retries per request by default, configurable via max_retries). See the deSEC rate limits documentation https://desec.readthedocs.io/en/latest/rate-limits.html.
   To prevent bursts of concurrent Terraform operations from exhausting deSEC rate limit buckets, the provider serializes API requests by default: domain-scoped requests (RRset operations, per-domain zone operations) are serialized per domain, and global DNS operations (domain creation/listing) share a single lock. This ensures at most one in-flight request per domain at a time, fully respecting the dns_api_per_domain_expensive (2/s per domain) and dns_api_expensive (10/s global) limits regardless of Terraform's parallelism setting. Serialization can be disabled via serialize_requests = false if you manage concurrency externally (e.g. via -parallelism=1).
@@ -38,6 +40,10 @@ Read-only access is available for all of the above through matching data sources
 ### List Resources
 
 `desec_domain`, `desec_record`, `desec_token`, and `desec_token_policy` are also available as list resources for bulk import and enumeration workflows.
+
+### Functions
+
+`provider::desec::to_punycode()` and `provider::desec::from_punycode()` convert domain names between unicode (human-readable) and [Punycode](https://en.wikipedia.org/wiki/Punycode) (ACE) form. The deSEC API only accepts domain names in Punycode form, so these functions are useful when working with Internationalized Domain Names (IDN) containing non-ASCII characters such as umlauts.
 
 ### Rate Limiting
 
@@ -124,6 +130,19 @@ resource "desec_record" "example_a" {
   ttl     = 3600
 
   depends_on = [desec_token_policy.lazy_token_domain]
+}
+
+# Internationalized Domain Names (IDN): use to_punycode() to convert a unicode
+# domain name to its Punycode (ACE) form before registering it with deSEC.
+# The deSEC API only accepts domain names in Punycode form.
+resource "desec_domain" "idn_example" {
+  name = provider::desec::to_punycode("münchen.de")
+}
+
+# from_punycode() converts back to the human-readable unicode form for display.
+output "idn_domain_unicode" {
+  description = "The IDN domain name in human-readable unicode form."
+  value       = provider::desec::from_punycode(desec_domain.idn_example.name)
 }
 ```
 
