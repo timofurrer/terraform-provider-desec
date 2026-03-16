@@ -182,6 +182,52 @@ func (c *Client) UpdateRRset(ctx context.Context, domain, subname, rrtype string
 	return &rrset, nil
 }
 
+// BulkPatchRRsetEntry is a single entry in a bulk PATCH request.
+// An empty Records slice signals deletion of that RRset.
+type BulkPatchRRsetEntry struct {
+	Subname string   `json:"subname"`
+	Type    string   `json:"type"`
+	TTL     *int     `json:"ttl,omitempty"`
+	Records []string `json:"records"`
+}
+
+// BulkPatchRRsets performs an atomic bulk PATCH on a domain's RRsets.
+// Entries with an empty Records slice are deleted; others are created or updated.
+// Returns the RRsets that were created or updated (deletions are not included).
+func (c *Client) BulkPatchRRsets(ctx context.Context, domain string, rrsets []BulkPatchRRsetEntry) ([]RRset, error) {
+	// Normalise subnames and ensure Records is never nil (nil → null in JSON, which
+	// is treated differently from [] by the API: [] means delete, null means patch).
+	entries := make([]BulkPatchRRsetEntry, len(rrsets))
+	for i, rs := range rrsets {
+		e := BulkPatchRRsetEntry{
+			Subname: rrsetSubnameForBody(rs.Subname),
+			Type:    rs.Type,
+			TTL:     rs.TTL,
+			Records: rs.Records,
+		}
+		if e.Records == nil {
+			e.Records = []string{}
+		}
+		entries[i] = e
+	}
+
+	resp, err := c.doLocked(ctx, http.MethodPatch, fmt.Sprintf("/domains/%s/rrsets/", domain), domain, entries)
+	if err != nil {
+		return nil, fmt.Errorf("bulk patching rrsets for domain %q: %w", domain, err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	if err := checkResponse(resp, http.StatusOK); err != nil {
+		return nil, fmt.Errorf("bulk patching rrsets for domain %q: %w", domain, err)
+	}
+
+	var result []RRset
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding bulk patch rrsets response: %w", err)
+	}
+	return result, nil
+}
+
 // DeleteRRset deletes an RRset by domain, subname, and type.
 func (c *Client) DeleteRRset(ctx context.Context, domain, subname, rrtype string) error {
 	resp, err := c.doLocked(ctx, http.MethodDelete, rrsetPath(domain, subname, rrtype), domain, nil)

@@ -162,6 +162,7 @@ func (p *desecProvider) Resources(_ context.Context) []func() resource.Resource 
 	return []func() resource.Resource{
 		newDomainResource,
 		newRecordResource,
+		newRecordsResource,
 		newTokenResource,
 		newTokenPolicyResource,
 	}
