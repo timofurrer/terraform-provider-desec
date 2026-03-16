@@ -1,3 +1,10 @@
+## 0.3.0 (2026-03-16)
+
+### IMPROVEMENTS (2 changes)
+
+- resource/desec_domain: Reject bare unicode domains during plan
+- functions: Add functions to convert IDN domains to ascii and to unicode (punycode)
+
 ## 0.2.2 (2026-03-12)
 
 ### IMPROVEMENTS (2 changes)
