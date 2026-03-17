@@ -1,3 +1,14 @@
+## 0.4.1 (2026-03-17)
+
+### IMPROVEMENTS (1 change)
+
+- Add some guides to the docs
+
+## 0.4.0 (2026-03-17)
+
+### IMPROVEMENTS (1 change)
+
+- Add new `desec_records` domain to manage a rrsets of a domain via zone file or rrsets. Optionally, it can be exclusive.
 ## 0.4.0 (2026-03-17)
 
 ### IMPROVEMENTS (1 change)
