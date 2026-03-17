@@ -1,3 +1,9 @@
+## 0.5.0 (2026-03-17)
+
+### IMPROVEMENTS (1 change)
+
+- Add functions to work with DNSSEC material
+
 ## 0.4.2 (2026-03-17)
 
 ### IMPROVEMENTS (1 change)
