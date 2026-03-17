@@ -346,6 +346,16 @@ func (r *recordsResource) Update(ctx context.Context, req resource.UpdateRequest
 		}
 	}
 
+	if plan.Exclusive.ValueBool() {
+		allRRsets, err := r.client.ListRRsets(ctx, domain, api.ListRRsetsOptions{})
+		if err != nil && !api.IsNotFound(err) {
+			resp.Diagnostics.AddError("Error Listing Records",
+				fmt.Sprintf("Unable to list records for domain %q: %s", domain, err))
+			return
+		}
+		entries = append(entries, deletionEntriesForExtras(allRRsets, newRRsets)...)
+	}
+
 	returned, err := r.client.BulkPutRRsets(ctx, domain, entries)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Updating Records",

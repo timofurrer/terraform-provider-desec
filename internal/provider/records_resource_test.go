@@ -444,6 +444,76 @@ resource "desec_records" "test" {
 	})
 }
 
+func TestAccRecordsResource_exclusiveUpdateDeletesExtras(t *testing.T) {
+	domainName := testAccDomainName(t, "rec-xupd")
+	providerConfig, factories, client := newTestAccEnvWithClient(t)
+
+	configNonExclusive := fmt.Sprintf(`
+%s
+
+resource "desec_domain" "test" {
+  name = %q
+}
+
+resource "desec_records" "test" {
+  domain    = desec_domain.test.name
+  exclusive = false
+  zonefile  = "www.%s. 3600 IN A 1.2.3.4\n"
+
+  depends_on = [desec_domain.test]
+}
+`, providerConfig, domainName, domainName)
+
+	configExclusive := fmt.Sprintf(`
+%s
+
+resource "desec_domain" "test" {
+  name = %q
+}
+
+resource "desec_records" "test" {
+  domain    = desec_domain.test.name
+  exclusive = true
+  zonefile  = "www.%s. 3600 IN A 1.2.3.4\n"
+
+  depends_on = [desec_domain.test]
+}
+`, providerConfig, domainName, domainName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: configNonExclusive,
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("desec_records.test",
+						tfjsonpath.New("records"), knownvalue.SetSizeExact(1)),
+				},
+			},
+			{
+				PreConfig: func() {
+					_, err := client.CreateRRset(t.Context(), domainName, api.CreateRRsetOptions{
+						Subname: "rogue",
+						Type:    "A",
+						TTL:     3600,
+						Records: []string{"6.6.6.6"},
+					})
+					if err != nil {
+						t.Fatalf("out-of-band create failed: %v", err)
+					}
+				},
+				Config: configExclusive,
+			},
+			{
+				Config:             configExclusive,
+				PlanOnly:           true,
+				ExpectNonEmptyPlan: false,
+			},
+		},
+	})
+}
+
 func TestAccRecordsResource_exclusiveSwitchOn(t *testing.T) {
 	domainName := testAccDomainName(t, "rec-xswitch")
 	providerConfig, factories := newTestAccEnv(t)
