@@ -10,8 +10,8 @@ Install the provider by adding it to your `required_providers` block:
 terraform {
   required_providers {
     desec = {
-      source  = "registry.terraform.io/timofurrer/desec"
-      version = "~> 0.1"
+      source  = "timofurrer/desec"
+      version = "~> 0"
     }
   }
 }
