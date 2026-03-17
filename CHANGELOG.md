@@ -1,3 +1,9 @@
+## 0.4.2 (2026-03-17)
+
+### IMPROVEMENTS (1 change)
+
+- Reorder guides in docs
+
 ## 0.4.1 (2026-03-17)
 
 ### IMPROVEMENTS (1 change)
