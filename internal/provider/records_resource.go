@@ -6,11 +6,14 @@ package provider
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
 	"codeberg.org/miekg/dns"
 	"codeberg.org/miekg/dns/dnsutil"
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -19,6 +22,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/timofurrer/terraform-provider-desec/internal/api"
 )
@@ -134,10 +138,16 @@ func (r *recordsResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 						"type": schema.StringAttribute{
 							MarkdownDescription: "The DNS record type (e.g. `A`, `AAAA`, `MX`, `TXT`). Must be uppercase.",
 							Required:            true,
+							Validators: []validator.String{
+								stringvalidator.RegexMatches(regexp.MustCompile(`^[A-Z][A-Z0-9]*$`), "must be an uppercase DNS record type (e.g. A, AAAA, MX, TXT)"),
+							},
 						},
 						"ttl": schema.Int64Attribute{
 							MarkdownDescription: "Time-to-live in seconds.",
 							Required:            true,
+							Validators: []validator.Int64{
+								int64validator.AtLeast(1),
+							},
 						},
 						"records": schema.SetAttribute{
 							MarkdownDescription: "Record values in presentation format (RDATA only).",
@@ -176,6 +186,37 @@ func (r *recordsResource) ValidateConfig(ctx context.Context, req resource.Valid
 			"Exactly one of \"zonefile\" or \"records\" must be specified.",
 		)
 		return
+	}
+
+	if recordsSet {
+		var models []recordsRRsetModel
+		diags := data.Records.ElementsAs(ctx, &models, false)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+
+		type rrKey struct{ subname, rrtype string }
+		seen := make(map[rrKey]bool, len(models))
+		for _, m := range models {
+			if m.Subname.IsUnknown() || m.Type.IsUnknown() {
+				continue
+			}
+			subname := m.Subname.ValueString()
+			if subname == "@" {
+				subname = ""
+			}
+			k := rrKey{subname, m.Type.ValueString()}
+			if seen[k] {
+				resp.Diagnostics.AddAttributeError(
+					path.Root("records"),
+					"Duplicate RRset",
+					fmt.Sprintf("Multiple entries with subname %q and type %q. Each (subname, type) pair must be unique.", m.Subname.ValueString(), m.Type.ValueString()),
+				)
+				return
+			}
+			seen[k] = true
+		}
 	}
 }
 
@@ -222,6 +263,8 @@ func (r *recordsResource) Create(ctx context.Context, req resource.CreateRequest
 		}
 		entries = append(entries, deletionEntriesForExtras(allRRsets, rrsets)...)
 	}
+
+	entries = deduplicateEntries(entries)
 
 	returned, err := r.client.BulkPutRRsets(ctx, domain, entries)
 	if err != nil {
@@ -356,6 +399,8 @@ func (r *recordsResource) Update(ctx context.Context, req resource.UpdateRequest
 		entries = append(entries, deletionEntriesForExtras(allRRsets, newRRsets)...)
 	}
 
+	entries = deduplicateEntries(entries)
+
 	returned, err := r.client.BulkPutRRsets(ctx, domain, entries)
 	if err != nil {
 		resp.Diagnostics.AddError("Error Updating Records",
@@ -441,6 +486,7 @@ func (r *recordsResource) setStateAfterWrite(ctx context.Context, data *recordsR
 	if isZonefileMode {
 		data.Records = recordsSet
 	} else {
+		data.Records = recordsSet
 		data.Zonefile = types.StringValue(rrsetToZonefile(domain, returned))
 	}
 
@@ -628,6 +674,21 @@ func deletionEntriesForExtras(allRRsets []api.RRset, configured []api.RRset) []a
 		})
 	}
 	return entries
+}
+
+func deduplicateEntries(entries []api.BulkPutRRsetEntry) []api.BulkPutRRsetEntry {
+	type rrKey struct{ subname, rrtype string }
+	seen := make(map[rrKey]bool, len(entries))
+	deduped := make([]api.BulkPutRRsetEntry, 0, len(entries))
+	for _, e := range entries {
+		k := rrKey{e.Subname, e.Type}
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		deduped = append(deduped, e)
+	}
+	return deduped
 }
 
 func apiRRsetsToSet(ctx context.Context, rrsets []api.RRset) (types.Set, diag.Diagnostics) {

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
@@ -618,6 +619,81 @@ resource "desec_records" "test" {
 	})
 }
 
+func TestAccRecordsResource_invalidTypeLowercase(t *testing.T) {
+	domainName := testAccDomainName(t, "records-val-type")
+	providerConfig, factories := newTestAccEnv(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccRecordsSetConfig(providerConfig, domainName, `
+    {
+      subname = "www"
+      type    = "a"
+      ttl     = 3600
+      records = ["1.2.3.4"]
+    },
+`),
+				ExpectError: regexp.MustCompile(`must be an uppercase DNS record type`),
+			},
+		},
+	})
+}
+
+func TestAccRecordsResource_invalidTTLZero(t *testing.T) {
+	domainName := testAccDomainName(t, "records-val-ttl")
+	providerConfig, factories := newTestAccEnv(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccRecordsSetConfig(providerConfig, domainName, `
+    {
+      subname = "www"
+      type    = "A"
+      ttl     = 0
+      records = ["1.2.3.4"]
+    },
+`),
+				ExpectError: regexp.MustCompile(`must be at least 1`),
+			},
+		},
+	})
+}
+
+func TestAccRecordsResource_duplicateSubnameType(t *testing.T) {
+	domainName := testAccDomainName(t, "records-val-dup")
+	providerConfig, factories := newTestAccEnv(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccRecordsSetConfig(providerConfig, domainName, `
+    {
+      subname = "www"
+      type    = "A"
+      ttl     = 3600
+      records = ["1.2.3.4"]
+    },
+    {
+      subname = "www"
+      type    = "A"
+      ttl     = 7200
+      records = ["5.6.7.8"]
+    },
+`),
+				ExpectError: regexp.MustCompile(`Duplicate RRset`),
+			},
+		},
+	})
+}
+
 func TestAccRecordsResource_zonefileComplex(t *testing.T) {
 	domainName := testAccDomainName(t, "records-zf-complex")
 	providerConfig, factories := newTestAccEnv(t)
@@ -1194,6 +1270,47 @@ func TestRRsetToZonefile(t *testing.T) {
 		"www.example.com.\t300\tIN\tA\t9.0.1.2\n"
 	if got != want {
 		t.Errorf("rrsetToZonefile:\ngot:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestSetStateAfterWrite_recordsMode(t *testing.T) {
+	ctx := t.Context()
+	r := &recordsResource{}
+
+	planRecords := []api.RRset{
+		{Subname: "www", Type: "A", TTL: 60, Records: []string{"1.2.3.4"}},
+	}
+	planSet, diags := apiRRsetsToSet(ctx, planRecords)
+	if diags.HasError() {
+		t.Fatalf("apiRRsetsToSet: %v", diags)
+	}
+
+	data := &recordsResourceModel{
+		Domain:    types.StringValue("example.com"),
+		Exclusive: types.BoolValue(false),
+		Zonefile:  types.StringNull(),
+		Records:   planSet,
+	}
+
+	returned := []api.RRset{
+		{Subname: "www", Type: "A", TTL: 3600, Records: []string{"1.2.3.4"}},
+	}
+
+	diags = r.setStateAfterWrite(ctx, data, "example.com", returned)
+	if diags.HasError() {
+		t.Fatalf("setStateAfterWrite: %v", diags)
+	}
+
+	gotRRsets, diags := recordsSetToAPIRRsets(ctx, data.Records)
+	if diags.HasError() {
+		t.Fatalf("recordsSetToAPIRRsets: %v", diags)
+	}
+
+	if len(gotRRsets) != 1 {
+		t.Fatalf("expected 1 rrset, got %d", len(gotRRsets))
+	}
+	if gotRRsets[0].TTL != 3600 {
+		t.Errorf("expected TTL 3600 (server-normalized), got %d", gotRRsets[0].TTL)
 	}
 }
 

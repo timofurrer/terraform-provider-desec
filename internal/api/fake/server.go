@@ -514,6 +514,18 @@ func (s *Server) bulkUpdateRRsets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	seen := make(map[string]int, len(reqs))
+	for i, req := range reqs {
+		k := rrsetKey(req.Subname, req.Type)
+		if prev, ok := seen[k]; ok {
+			http.Error(w, fmt.Sprintf(
+				`[{"non_field_errors":["Same subname and type as in position(s) %d, but must be unique."]}]`,
+				prev), http.StatusBadRequest)
+			return
+		}
+		seen[k] = i
+	}
+
 	ts := now()
 	results := make([]api.RRset, 0, len(reqs))
 

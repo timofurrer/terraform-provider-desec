@@ -6,6 +6,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -645,4 +646,64 @@ resource "desec_record" "test" {
   depends_on = [desec_domain.domain1, desec_domain.domain2]
 }
 `, providerConfig, domain1, domain2, activeDomain)
+}
+
+func TestAccRecordResource_invalidTypeLowercase(t *testing.T) {
+	domainName := testAccDomainName(t, "rec-val-type")
+	providerConfig, factories := newTestAccEnv(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: fmt.Sprintf(`
+%s
+
+resource "desec_domain" "test" {
+  name = %q
+}
+
+resource "desec_record" "test" {
+  domain  = desec_domain.test.name
+  subname = "www"
+  type    = "a"
+  ttl     = 3600
+  records = ["1.2.3.4"]
+}
+`, providerConfig, domainName),
+				ExpectError: regexp.MustCompile(`must be an uppercase DNS record type`),
+			},
+		},
+	})
+}
+
+func TestAccRecordResource_invalidTTLZero(t *testing.T) {
+	domainName := testAccDomainName(t, "rec-val-ttl")
+	providerConfig, factories := newTestAccEnv(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: fmt.Sprintf(`
+%s
+
+resource "desec_domain" "test" {
+  name = %q
+}
+
+resource "desec_record" "test" {
+  domain  = desec_domain.test.name
+  subname = "www"
+  type    = "A"
+  ttl     = 0
+  records = ["1.2.3.4"]
+}
+`, providerConfig, domainName),
+				ExpectError: regexp.MustCompile(`must be at least 1`),
+			},
+		},
+	})
 }
