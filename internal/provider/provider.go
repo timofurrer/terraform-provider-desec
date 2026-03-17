@@ -78,6 +78,8 @@ Read-only access is available for all of the above through matching data sources
 
 ` + "`" + `provider::desec::to_punycode()` + "`" + ` and ` + "`" + `provider::desec::from_punycode()` + "`" + ` convert domain names between unicode (human-readable) and [Punycode](https://en.wikipedia.org/wiki/Punycode) (ACE) form. The deSEC API only accepts domain names in Punycode form, so these functions are useful when working with Internationalized Domain Names (IDN) containing non-ASCII characters such as umlauts.
 
+` + "`" + `provider::desec::parse_dnskey()` + "`" + ` and ` + "`" + `provider::desec::parse_ds()` + "`" + ` parse DNSSEC key material strings (as returned in the ` + "`" + `keys` + "`" + ` attribute of a domain) into their constituent fields per [RFC 4034](https://datatracker.ietf.org/doc/html/rfc4034). This is useful for extracting individual fields such as the algorithm number, key tag, or digest to pass to a parent-zone registrar or another provider.
+
 ### Rate Limiting
 
 The deSEC API enforces rate limits. The provider automatically retries requests that receive HTTP 429 responses, honouring the ` + "`" + `Retry-After` + "`" + ` header (up to 5 retries per request by default, configurable via ` + "`" + `max_retries` + "`" + `). See the [deSEC rate limits documentation](https://desec.readthedocs.io/en/latest/rate-limits.html).
@@ -161,6 +163,8 @@ func (p *desecProvider) Functions(_ context.Context) []func() function.Function 
 	return []func() function.Function{
 		newToPunycodeFunction,
 		newFromPunycodeFunction,
+		newParseDNSKeyFunction,
+		newParseDSFunction,
 	}
 }
 

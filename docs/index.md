@@ -15,6 +15,7 @@ description: |-
   desec_domain, desec_record, desec_token, and desec_token_policy are also available as list resources for bulk import and enumeration workflows.
   Functions
   provider::desec::to_punycode() and provider::desec::from_punycode() convert domain names between unicode (human-readable) and Punycode https://en.wikipedia.org/wiki/Punycode (ACE) form. The deSEC API only accepts domain names in Punycode form, so these functions are useful when working with Internationalized Domain Names (IDN) containing non-ASCII characters such as umlauts.
+  provider::desec::parse_dnskey() and provider::desec::parse_ds() parse DNSSEC key material strings (as returned in the keys attribute of a domain) into their constituent fields per RFC 4034 https://datatracker.ietf.org/doc/html/rfc4034. This is useful for extracting individual fields such as the algorithm number, key tag, or digest to pass to a parent-zone registrar or another provider.
   Rate Limiting
   The deSEC API enforces rate limits. The provider automatically retries requests that receive HTTP 429 responses, honouring the Retry-After header (up to 5 retries per request by default, configurable via max_retries). See the deSEC rate limits documentation https://desec.readthedocs.io/en/latest/rate-limits.html.
   To prevent bursts of concurrent Terraform operations from exhausting deSEC rate limit buckets, the provider serializes API requests by default: domain-scoped requests (RRset operations, per-domain zone operations) are serialized per domain, and global DNS operations (domain creation/listing) share a single lock. This ensures at most one in-flight request per domain at a time, fully respecting the dns_api_per_domain_expensive (2/s per domain) and dns_api_expensive (10/s global) limits regardless of Terraform's parallelism setting. Serialization can be disabled via serialize_requests = false if you manage concurrency externally (e.g. via -parallelism=1).
@@ -52,6 +53,8 @@ Read-only access is available for all of the above through matching data sources
 ### Functions
 
 `provider::desec::to_punycode()` and `provider::desec::from_punycode()` convert domain names between unicode (human-readable) and [Punycode](https://en.wikipedia.org/wiki/Punycode) (ACE) form. The deSEC API only accepts domain names in Punycode form, so these functions are useful when working with Internationalized Domain Names (IDN) containing non-ASCII characters such as umlauts.
+
+`provider::desec::parse_dnskey()` and `provider::desec::parse_ds()` parse DNSSEC key material strings (as returned in the `keys` attribute of a domain) into their constituent fields per [RFC 4034](https://datatracker.ietf.org/doc/html/rfc4034). This is useful for extracting individual fields such as the algorithm number, key tag, or digest to pass to a parent-zone registrar or another provider.
 
 ### Rate Limiting
 

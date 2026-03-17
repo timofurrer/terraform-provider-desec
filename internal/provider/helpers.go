@@ -3,7 +3,15 @@
 
 package provider
 
-import "github.com/hashicorp/terraform-plugin-framework/types"
+import (
+	"strconv"
+
+	"github.com/hashicorp/terraform-plugin-framework/types"
+)
+
+func parseInt64(s string) (int64, error) {
+	return strconv.ParseInt(s, 10, 64)
+}
 
 // nullableString converts a types.String to a *string suitable for API calls.
 // Null or unknown values become nil.
