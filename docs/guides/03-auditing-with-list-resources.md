@@ -1,5 +1,5 @@
 ---
-page_title: "Auditing with List Resources"
+page_title: "3. Auditing with List Resources"
 subcategory: ""
 description: |-
   Audit existing deSEC domains, DNS records, API tokens, and token policies using Terraform list resources.
@@ -50,7 +50,20 @@ list "desec_domain" "owns" {
 }
 ```
 
-{{ tffile "examples/guides/auditing-with-list-resources/domains.tfquery.hcl" }}
+```terraform
+# List all domains in the account
+list "desec_domain" "all" {
+  provider = desec
+}
+
+# Find which domain owns a specific fully-qualified domain name
+list "desec_domain" "owns" {
+  provider = desec
+  config {
+    owns_qname = "sub.example.com."
+  }
+}
+```
 
 ## Auditing DNS Records
 
@@ -90,7 +103,33 @@ list "desec_record" "www" {
 }
 ```
 
-{{ tffile "examples/guides/auditing-with-list-resources/records.tfquery.hcl" }}
+```terraform
+# List all DNS records for a domain
+list "desec_record" "all" {
+  provider = desec
+  config {
+    domain = "example.com"
+  }
+}
+
+# List only A records
+list "desec_record" "a_records" {
+  provider = desec
+  config {
+    domain = "example.com"
+    type   = "A"
+  }
+}
+
+# List records for a specific subdomain
+list "desec_record" "www" {
+  provider = desec
+  config {
+    domain  = "example.com"
+    subname = "www"
+  }
+}
+```
 
 ## Auditing Tokens and Policies
 
@@ -114,11 +153,24 @@ list "desec_token_policy" "all" {
 }
 ```
 
-{{ tffile "examples/guides/auditing-with-list-resources/tokens.tfquery.hcl" }}
+```terraform
+# List all API tokens for the account
+list "desec_token" "all" {
+  provider = desec
+}
+
+# List all policies for a specific token
+list "desec_token_policy" "all" {
+  provider = desec
+  config {
+    token_id = "00000000-0000-0000-0000-000000000000"
+  }
+}
+```
 
 ## Next Steps
 
 - See the [`desec_domain`](../list-resources/domain) list resource reference for domain query options.
 - See the [`desec_record`](../list-resources/record) list resource reference for record query options.
 - See the [`desec_token`](../list-resources/token) and [`desec_token_policy`](../list-resources/token_policy) list resource references for token auditing.
-- To bring discovered resources under TF management, see [Migrating to TF with Bulk Import and Config Bootstrapping](../guides/migrating-with-bulk-import).
+- To bring discovered resources under TF management, see [Migrating to TF with Bulk Import and Config Bootstrapping](../guides/02-migrating-with-bulk-import).

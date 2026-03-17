@@ -1,5 +1,5 @@
 ---
-page_title: "Migrating to TF with Bulk Import and Config Bootstrapping"
+page_title: "2. Migrating to TF with Bulk Import and Config Bootstrapping"
 subcategory: ""
 description: |-
   Migrate existing deSEC domains and DNS records to Terraform management using list resources and bulk import.
@@ -126,6 +126,6 @@ terraform apply
 
 ## Next Steps
 
-- To audit your account without importing, see [Auditing with List Resources](../guides/auditing-with-list-resources).
+- To audit your account without importing, see [Auditing with List Resources](../guides/03-auditing-with-list-resources).
 - See the [`desec_domain`](../list-resources/domain) and [`desec_record`](../list-resources/record) list resource references for all query options.
 - Refer to Terraform's [bulk import documentation](https://developer.hashicorp.com/terraform/language/import/bulk) for more details on the `terraform query` workflow.

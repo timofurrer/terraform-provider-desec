@@ -5,6 +5,8 @@ description: |-
   The deSEC https://desec.io provider enables Terraform and OpenTofu to manage DNS infrastructure hosted on deSEC, a free and secure DNS hosting service.
   Use this provider to declaratively manage:
   Domains — create and inspect DNS zones, including DNSSEC key material (deSEC domains API https://desec.readthedocs.io/en/latest/dns/domains.html)Resource Record Sets — manage any DNS record type at the zone apex or any subdomain (deSEC RRsets API https://desec.readthedocs.io/en/latest/dns/rrsets.html)API Tokens — create scoped, expiring authentication tokens with fine-grained IP allowlists and domain permissions (deSEC tokens API https://desec.readthedocs.io/en/latest/auth/tokens.html)Token Policies — define per-domain, per-subname, and per-type write permissions for tokens, including default catch-all policies
+  Guides
+  Getting Started guides/01-getting-started — register a domain, access nameservers and DNSSEC material, and create DNS records.Migrating to TF with Bulk Import and Config Bootstrapping guides/02-migrating-with-bulk-import — discover existing resources and generate configuration to bring them under TF management.Auditing with List Resources guides/03-auditing-with-list-resources — enumerate domains, records, tokens, and policies in your deSEC account.
   Data Sources
   Read-only access is available for all of the above through matching data sources (desec_domain, desec_domains, desec_record, desec_records, desec_token, desec_tokens, desec_token_policy, desec_token_policies), plus a desec_zonefile data source that exports a full RFC 1035 zone file.
   Ephemeral Resources
@@ -28,6 +30,12 @@ Use this provider to declaratively manage:
 - **Resource Record Sets** — manage any DNS record type at the zone apex or any subdomain ([deSEC RRsets API](https://desec.readthedocs.io/en/latest/dns/rrsets.html))
 - **API Tokens** — create scoped, expiring authentication tokens with fine-grained IP allowlists and domain permissions ([deSEC tokens API](https://desec.readthedocs.io/en/latest/auth/tokens.html))
 - **Token Policies** — define per-domain, per-subname, and per-type write permissions for tokens, including default catch-all policies
+
+### Guides
+
+- [Getting Started](guides/01-getting-started) — register a domain, access nameservers and DNSSEC material, and create DNS records.
+- [Migrating to TF with Bulk Import and Config Bootstrapping](guides/02-migrating-with-bulk-import) — discover existing resources and generate configuration to bring them under TF management.
+- [Auditing with List Resources](guides/03-auditing-with-list-resources) — enumerate domains, records, tokens, and policies in your deSEC account.
 
 ### Data Sources
 
