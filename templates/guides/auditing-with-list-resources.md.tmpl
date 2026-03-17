@@ -1,0 +1,124 @@
+---
+page_title: "Auditing with List Resources"
+subcategory: ""
+description: |-
+  Audit existing deSEC domains, DNS records, API tokens, and token policies using Terraform list resources.
+---
+
+# Auditing with List Resources
+
+Terraform [list resources](https://developer.hashicorp.com/terraform/language/import/bulk) let you
+query your deSEC account to discover and inspect existing infrastructure using `terraform query`.
+
+~> **Note:** List resources require Terraform v1.12 or newer.
+
+## Auditing Domains
+
+Use the `desec_domain` list resource to enumerate all DNS zones in your account:
+
+```terraform
+list "desec_domain" "all" {
+  provider = desec
+}
+```
+
+Run the query:
+
+```shell
+terraform query
+```
+
+Terraform prints each domain's identity (its name). To include full details like DNSSEC keys
+and minimum TTL, set `include_resource = true`:
+
+```terraform
+list "desec_domain" "all" {
+  provider         = desec
+  include_resource = true
+}
+```
+
+You can also find which domain owns a specific fully-qualified domain name using the
+`owns_qname` filter:
+
+```terraform
+list "desec_domain" "owns" {
+  provider = desec
+  config {
+    owns_qname = "sub.example.com."
+  }
+}
+```
+
+{{ tffile "examples/guides/auditing-with-list-resources/domains.tfquery.hcl" }}
+
+## Auditing DNS Records
+
+Use the `desec_record` list resource to enumerate RRsets within a domain. The `domain` config
+attribute is required; you can optionally filter by `type` and `subname`:
+
+```terraform
+list "desec_record" "all" {
+  provider = desec
+  config {
+    domain = "example.com"
+  }
+}
+```
+
+Filter to only A records:
+
+```terraform
+list "desec_record" "a_records" {
+  provider = desec
+  config {
+    domain = "example.com"
+    type   = "A"
+  }
+}
+```
+
+Filter to a specific subdomain:
+
+```terraform
+list "desec_record" "www" {
+  provider = desec
+  config {
+    domain  = "example.com"
+    subname = "www"
+  }
+}
+```
+
+{{ tffile "examples/guides/auditing-with-list-resources/records.tfquery.hcl" }}
+
+## Auditing Tokens and Policies
+
+Use the `desec_token` list resource to enumerate all API tokens in the account:
+
+```terraform
+list "desec_token" "all" {
+  provider = desec
+}
+```
+
+To inspect the scoping policies for a specific token, use `desec_token_policy` with the
+`token_id` config attribute:
+
+```terraform
+list "desec_token_policy" "all" {
+  provider = desec
+  config {
+    token_id = "00000000-0000-0000-0000-000000000000"
+  }
+}
+```
+
+{{ tffile "examples/guides/auditing-with-list-resources/tokens.tfquery.hcl" }}
+
+## Next Steps
+
+- See the [`desec_domain`](../list-resources/domain) list resource reference for domain query options.
+- See the [`desec_record`](../list-resources/record) list resource reference for record query options.
+- See the [`desec_token`](../list-resources/token) and [`desec_token_policy`](../list-resources/token_policy) list resource references for token auditing.
+- To bring discovered resources under TF management, see [Migrating to TF with Bulk Import and Config Bootstrapping](../guides/migrating-with-bulk-import).
