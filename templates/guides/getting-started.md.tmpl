@@ -1,0 +1,179 @@
+---
+page_title: "Getting Started with the deSEC Provider"
+subcategory: ""
+description: |-
+  Register a domain, access nameservers and DNSSEC material, and create DNS records with the deSEC Terraform provider.
+---
+
+# Getting Started with the deSEC Provider
+
+This guide walks through the essential steps for managing DNS with [deSEC](https://desec.io) using Terraform:
+registering a domain, retrieving its nameservers and DNSSEC material, and creating DNS records.
+
+## Prerequisites
+
+1. Create a free account at [desec.io](https://desec.io).
+2. Generate an API token in the deSEC web interface under **Token Management**.
+3. Configure the provider with your token:
+
+```terraform
+provider "desec" {
+  api_token = var.desec_api_token
+}
+
+variable "desec_api_token" {
+  type      = string
+  sensitive = true
+}
+```
+
+You can also set the `DESEC_API_TOKEN` environment variable instead of passing the token inline.
+
+## Step 1: Register a Domain
+
+Use the `desec_domain` resource to register a domain with deSEC:
+
+```terraform
+resource "desec_domain" "example" {
+  name = "example.com"
+}
+```
+
+After `terraform apply`, the domain is created in deSEC and nameservers are automatically assigned.
+
+-> **Note:** deSEC also supports free subdomains under `dedyn.io` (e.g. `myproject.dedyn.io`).
+
+-> **Tip:** For internationalized domain names (IDN), the provider offers the
+[`provider::desec::to_punycode()`](../functions/to_punycode) and
+[`provider::desec::from_punycode()`](../functions/from_punycode) functions.
+The deSEC API requires Punycode form, so use `to_punycode()` when registering unicode domains:
+
+```terraform
+resource "desec_domain" "idn" {
+  name = provider::desec::to_punycode("münchen.de")
+}
+```
+
+## Step 2: Access Nameservers and DNSSEC Material
+
+### Nameservers
+
+Look up the NS records assigned by deSEC using the `desec_record` data source. You will need to enter
+these at your domain registrar to delegate the domain to deSEC.
+
+```terraform
+data "desec_record" "nameservers" {
+  domain  = desec_domain.example.name
+  subname = "@"
+  type    = "NS"
+}
+
+output "nameservers" {
+  description = "Enter these nameservers at your domain registrar."
+  value       = data.desec_record.nameservers.records
+}
+```
+
+### DNSSEC
+
+deSEC automatically signs your zone with DNSSEC. The signing keys are available on the
+`desec_domain` resource via the `keys` attribute. To enable DNSSEC validation, enter the
+DS records at your domain registrar:
+
+```terraform
+output "dnssec_ds_records" {
+  description = "DS records for DNSSEC delegation — enter these at your domain registrar."
+  value       = flatten([for key in desec_domain.example.keys : key.ds if key.managed])
+}
+
+output "dnssec_dnskeys" {
+  description = "DNSKEY public key records for DNSSEC verification."
+  value       = [for key in desec_domain.example.keys : key.dnskey if key.managed]
+}
+```
+
+## Step 3: Create DNS Records
+
+Use the `desec_record` resource to create individual DNS record sets. Each resource manages
+one RRset (a combination of domain, subname, and type).
+
+```terraform
+resource "desec_record" "www_a" {
+  domain  = desec_domain.example.name
+  subname = "www"
+  type    = "A"
+  ttl     = 3600
+  records = ["203.0.113.10"]
+}
+
+resource "desec_record" "mx" {
+  domain  = desec_domain.example.name
+  subname = "@"
+  type    = "MX"
+  ttl     = 3600
+  records = ["10 mail.example.com."]
+}
+
+resource "desec_record" "spf" {
+  domain  = desec_domain.example.name
+  subname = "@"
+  type    = "TXT"
+  ttl     = 3600
+  records = ["\"v=spf1 mx ~all\""]
+}
+```
+
+-> **Tip:** Use `@` or `""` for `subname` to create records at the zone apex. The `records` field
+is a set of strings — multiple values create a multi-value RRset (e.g. round-robin A records).
+
+## Step 4: Bulk Record Management
+
+For domains with many records, the [`desec_records`](../resources/records) resource is a better
+fit than individual `desec_record` resources. It sends all record changes in a single bulk API
+request, which avoids deSEC rate limits that can occur when managing many `desec_record` resources
+in parallel.
+
+`desec_records` also accepts a BIND-style zone file, making it easy to migrate existing DNS
+configurations:
+
+```terraform
+resource "desec_records" "bulk" {
+  domain    = desec_domain.example.name
+  exclusive = true
+
+  zonefile = <<-ZONE
+    example.com.      3600 IN A     203.0.113.10
+    example.com.      3600 IN AAAA  2001:db8::1
+    www.example.com.  3600 IN A     203.0.113.10
+    example.com.      3600 IN MX    10 mail.example.com.
+    example.com.      3600 IN TXT   "v=spf1 mx ~all"
+  ZONE
+}
+```
+
+Setting `exclusive = true` makes this resource the single source of truth for all records on the
+domain — any records not declared here are deleted. This is useful for ensuring no unmanaged records
+exist. You can also load the zone file from disk using `file()` or `templatefile()`:
+
+```terraform
+resource "desec_records" "bulk" {
+  domain    = desec_domain.example.name
+  exclusive = true
+  zonefile  = file("${path.module}/example.com.zone")
+}
+```
+
+-> **Note:** `desec_records` can also use structured `records` blocks instead of a zone file.
+See the [`desec_records` resource documentation](../resources/records) for details.
+
+## Complete Example
+
+The full configuration combining all steps above:
+
+{{ tffile "examples/guides/getting-started/main.tf" }}
+
+## Next Steps
+
+- See the [`desec_records`](../resources/records) resource for all bulk record management options.
+- See the [`desec_token`](../resources/token) resource for creating scoped API tokens with fine-grained policies.
+- Explore [provider-defined functions](../functions/to_punycode) for internationalized domain name (IDN) support.
