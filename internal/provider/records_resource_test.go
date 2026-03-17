@@ -6,7 +6,6 @@ package provider
 import (
 	"fmt"
 	"regexp"
-	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -694,6 +693,114 @@ func TestAccRecordsResource_duplicateSubnameType(t *testing.T) {
 	})
 }
 
+func TestAccRecordsResource_switchZonefileToRecords(t *testing.T) {
+	domainName := testAccDomainName(t, "records-zf2rs")
+	providerConfig, factories := newTestAccEnv(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccRecordsZonefileConfig(providerConfig, domainName, fmt.Sprintf(
+					"www.%s. 3600 IN A 1.2.3.4\n%s. 3600 IN MX 10 mail.%s.\n", domainName, domainName, domainName)),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("desec_records.test",
+						tfjsonpath.New("records"), knownvalue.SetSizeExact(2)),
+				},
+			},
+			{
+				Config: testAccRecordsSetConfig(providerConfig, domainName, `
+    {
+      subname = "www"
+      type    = "A"
+      ttl     = 3600
+      records = ["1.2.3.4"]
+    },
+    {
+      subname = ""
+      type    = "MX"
+      ttl     = 3600
+      records = ["10 mail.`+domainName+`."]
+    },
+`),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("desec_records.test",
+						tfjsonpath.New("records"), knownvalue.SetSizeExact(2)),
+					statecheck.ExpectKnownValue("desec_records.test",
+						tfjsonpath.New("zonefile"), knownvalue.NotNull()),
+				},
+			},
+			{
+				Config: testAccRecordsSetConfig(providerConfig, domainName, `
+    {
+      subname = "www"
+      type    = "A"
+      ttl     = 3600
+      records = ["1.2.3.4"]
+    },
+    {
+      subname = ""
+      type    = "MX"
+      ttl     = 3600
+      records = ["10 mail.`+domainName+`."]
+    },
+`),
+				PlanOnly:           true,
+				ExpectNonEmptyPlan: false,
+			},
+		},
+	})
+}
+
+func TestAccRecordsResource_switchRecordsToZonefile(t *testing.T) {
+	domainName := testAccDomainName(t, "records-rs2zf")
+	providerConfig, factories := newTestAccEnv(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccRecordsSetConfig(providerConfig, domainName, `
+    {
+      subname = "www"
+      type    = "A"
+      ttl     = 3600
+      records = ["1.2.3.4"]
+    },
+    {
+      subname = ""
+      type    = "MX"
+      ttl     = 3600
+      records = ["10 mail.`+domainName+`."]
+    },
+`),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("desec_records.test",
+						tfjsonpath.New("records"), knownvalue.SetSizeExact(2)),
+				},
+			},
+			{
+				Config: testAccRecordsZonefileConfig(providerConfig, domainName, fmt.Sprintf(
+					"www.%s. 3600 IN A 1.2.3.4\n%s. 3600 IN MX 10 mail.%s.\n", domainName, domainName, domainName)),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("desec_records.test",
+						tfjsonpath.New("records"), knownvalue.SetSizeExact(2)),
+					statecheck.ExpectKnownValue("desec_records.test",
+						tfjsonpath.New("zonefile"), knownvalue.NotNull()),
+				},
+			},
+			{
+				Config: testAccRecordsZonefileConfig(providerConfig, domainName, fmt.Sprintf(
+					"www.%s. 3600 IN A 1.2.3.4\n%s. 3600 IN MX 10 mail.%s.\n", domainName, domainName, domainName)),
+				PlanOnly:           true,
+				ExpectNonEmptyPlan: false,
+			},
+		},
+	})
+}
+
 func TestAccRecordsResource_zonefileComplex(t *testing.T) {
 	domainName := testAccDomainName(t, "records-zf-complex")
 	providerConfig, factories := newTestAccEnv(t)
@@ -1313,6 +1420,3 @@ func TestSetStateAfterWrite_recordsMode(t *testing.T) {
 		t.Errorf("expected TTL 3600 (server-normalized), got %d", gotRRsets[0].TTL)
 	}
 }
-
-// Suppress unused import warning.
-var _ = strings.Join
