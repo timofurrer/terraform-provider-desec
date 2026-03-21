@@ -80,6 +80,8 @@ Read-only access is available for all of the above through matching data sources
 
 ` + "`" + `provider::desec::parse_dnskey()` + "`" + ` and ` + "`" + `provider::desec::parse_ds()` + "`" + ` parse DNSSEC key material strings (as returned in the ` + "`" + `keys` + "`" + ` attribute of a domain) into their constituent fields per [RFC 4034](https://datatracker.ietf.org/doc/html/rfc4034). This is useful for extracting individual fields such as the algorithm number, key tag, or digest to pass to a parent-zone registrar or another provider.
 
+` + "`" + `provider::desec::openpgpkey_dane()` + "`" + ` computes the DNS record ` + "`" + `subname` + "`" + ` and ` + "`" + `rdata` + "`" + ` for publishing an OpenPGP public key via the OPENPGPKEY DNS record (TYPE 61) as defined in [RFC 7929](https://datatracker.ietf.org/doc/html/rfc7929). Given an email address and a base64-encoded GPG key, it returns an object with ` + "`" + `domain` + "`" + `, ` + "`" + `subname` + "`" + `, ` + "`" + `type` + "`" + `, and ` + "`" + `rdata` + "`" + ` that can be wired directly into a ` + "`" + `desec_record` + "`" + ` resource.
+
 ### Rate Limiting
 
 The deSEC API enforces rate limits. The provider automatically retries requests that receive HTTP 429 responses, honouring the ` + "`" + `Retry-After` + "`" + ` header (up to 5 retries per request by default, configurable via ` + "`" + `max_retries` + "`" + `). See the [deSEC rate limits documentation](https://desec.readthedocs.io/en/latest/rate-limits.html).
@@ -165,6 +167,7 @@ func (p *desecProvider) Functions(_ context.Context) []func() function.Function 
 		newFromPunycodeFunction,
 		newParseDNSKeyFunction,
 		newParseDSFunction,
+		newOpenPGPKeyDANEFunction,
 	}
 }
 
