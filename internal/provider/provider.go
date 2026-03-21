@@ -64,7 +64,7 @@ Use this provider to declaratively manage:
 
 ### Data Sources
 
-Read-only access is available for all of the above through matching data sources (` + "`" + `desec_domain` + "`" + `, ` + "`" + `desec_domains` + "`" + `, ` + "`" + `desec_record` + "`" + `, ` + "`" + `desec_records` + "`" + `, ` + "`" + `desec_token` + "`" + `, ` + "`" + `desec_tokens` + "`" + `, ` + "`" + `desec_token_policy` + "`" + `, ` + "`" + `desec_token_policies` + "`" + `), plus a ` + "`" + `desec_zonefile` + "`" + ` data source that exports a full RFC 1035 zone file.
+Read-only access is available for all of the above through matching data sources (` + "`" + `desec_domain` + "`" + `, ` + "`" + `desec_domains` + "`" + `, ` + "`" + `desec_rrset` + "`" + `, ` + "`" + `desec_rrsets` + "`" + `, ` + "`" + `desec_token` + "`" + `, ` + "`" + `desec_tokens` + "`" + `, ` + "`" + `desec_token_policy` + "`" + `, ` + "`" + `desec_token_policies` + "`" + `), plus a ` + "`" + `desec_zonefile` + "`" + ` data source that exports a full RFC 1035 zone file.
 
 ### Ephemeral Resources
 
@@ -72,7 +72,7 @@ Read-only access is available for all of the above through matching data sources
 
 ### List Resources
 
-` + "`" + `desec_domain` + "`" + `, ` + "`" + `desec_record` + "`" + `, ` + "`" + `desec_token` + "`" + `, and ` + "`" + `desec_token_policy` + "`" + ` are also available as list resources for bulk import and enumeration workflows.
+` + "`" + `desec_domain` + "`" + `, ` + "`" + `desec_rrset` + "`" + `, ` + "`" + `desec_token` + "`" + `, and ` + "`" + `desec_token_policy` + "`" + ` are also available as list resources for bulk import and enumeration workflows.
 
 ### Functions
 
@@ -171,7 +171,7 @@ func (p *desecProvider) Functions(_ context.Context) []func() function.Function 
 func (p *desecProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		newDomainResource,
-		newRecordResource,
+		newRRsetResource,
 		newRecordsResource,
 		newTokenResource,
 		newTokenPolicyResource,
@@ -187,7 +187,7 @@ func (p *desecProvider) EphemeralResources(_ context.Context) []func() ephemeral
 func (p *desecProvider) ListResources(_ context.Context) []func() list.ListResource {
 	return []func() list.ListResource{
 		newDomainListResource,
-		newRecordListResource,
+		newRRsetListResource,
 		newTokenListResource,
 		newTokenPolicyListResource,
 	}
@@ -197,8 +197,8 @@ func (p *desecProvider) DataSources(_ context.Context) []func() datasource.DataS
 	return []func() datasource.DataSource{
 		newDomainDataSource,
 		newDomainsDataSource,
-		newRecordDataSource,
-		newRecordsDataSource,
+		newRRsetDataSource,
+		newRRsetsDataSource,
 		newZonefileDataSource,
 		newTokenDataSource,
 		newTokensDataSource,

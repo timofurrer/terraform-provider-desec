@@ -3,23 +3,23 @@
 page_title: "desec_records Resource - desec"
 subcategory: ""
 description: |-
-  Manages a set of deSEC DNS records via the bulk RRset API.
-  Records can be specified in one of two ways (mutually exclusive):
-  Mode A (zonefile): Provide a BIND-format zone file string. The records attribute is computed.Mode B (records): Provide a structured set of RRset objects. The zonefile attribute is computed.
-  This resource co-exists with desec_record resources. Only the RRsets explicitly declared are owned and managed; other records in the domain are not touched.
+  Manages a set of deSEC DNS RRsets via the bulk RRset API.
+  RRsets can be specified in one of two ways (mutually exclusive):
+  Mode A (zonefile): Provide a BIND-format zone file string. The rrsets attribute is computed.Mode B (rrsets): Provide a structured set of RRset objects. The zonefile attribute is computed.
+  This resource co-exists with desec_rrset resources. Only the RRsets explicitly declared are owned and managed; other RRsets in the domain are not touched.
   The following record types are silently ignored because they are managed automatically by deSEC: SOA, RRSIG, NSEC, NSEC3, NSEC3PARAM, CDNSKEY, CDS, and apex NS records.
 ---
 
 # desec_records (Resource)
 
-Manages a set of deSEC DNS records via the bulk RRset API.
+Manages a set of deSEC DNS RRsets via the bulk RRset API.
 
-Records can be specified in one of two ways (mutually exclusive):
+RRsets can be specified in one of two ways (mutually exclusive):
 
-- **Mode A (`zonefile`)**: Provide a BIND-format zone file string. The `records` attribute is computed.
-- **Mode B (`records`)**: Provide a structured set of RRset objects. The `zonefile` attribute is computed.
+- **Mode A (`zonefile`)**: Provide a BIND-format zone file string. The `rrsets` attribute is computed.
+- **Mode B (`rrsets`)**: Provide a structured set of RRset objects. The `zonefile` attribute is computed.
 
-This resource **co-exists** with `desec_record` resources. Only the RRsets explicitly declared are owned and managed; other records in the domain are not touched.
+This resource **co-exists** with `desec_rrset` resources. Only the RRsets explicitly declared are owned and managed; other RRsets in the domain are not touched.
 
 The following record types are silently ignored because they are managed automatically by deSEC: `SOA`, `RRSIG`, `NSEC`, `NSEC3`, `NSEC3PARAM`, `CDNSKEY`, `CDS`, and apex `NS` records.
 
@@ -51,45 +51,45 @@ resource "desec_records" "from_zonefile" {
 
 # --- Mode B: Manage records via structured RRsets ---
 
-resource "desec_records" "from_records" {
+resource "desec_records" "from_rrsets" {
   domain = desec_domain.example.name
 
-  records = [
+  rrsets = [
     {
       subname = ""
       type    = "A"
       ttl     = 3600
-      records = ["203.0.113.10"]
+      rdata   = ["203.0.113.10"]
     },
     {
       subname = ""
       type    = "AAAA"
       ttl     = 3600
-      records = ["2001:db8::1"]
+      rdata   = ["2001:db8::1"]
     },
     {
       subname = "www"
       type    = "A"
       ttl     = 3600
-      records = ["203.0.113.10"]
+      rdata   = ["203.0.113.10"]
     },
     {
       subname = ""
       type    = "MX"
       ttl     = 3600
-      records = ["10 mail.example.com."]
+      rdata   = ["10 mail.example.com."]
     },
     {
       subname = "mail"
       type    = "A"
       ttl     = 3600
-      records = ["203.0.113.20"]
+      rdata   = ["203.0.113.20"]
     },
     {
       subname = ""
       type    = "TXT"
       ttl     = 3600
-      records = ["\"v=spf1 mx ~all\""]
+      rdata   = ["\"v=spf1 mx ~all\""]
     },
   ]
 
@@ -111,8 +111,8 @@ resource "desec_records" "exclusive" {
 }
 
 # Reference the computed attributes:
-#   desec_records.from_zonefile.records  — structured RRsets (when using Mode A)
-#   desec_records.from_records.zonefile  — canonical zone file (when using Mode B)
+#   desec_records.from_zonefile.rrsets   — structured RRsets (when using Mode A)
+#   desec_records.from_rrsets.zonefile   — canonical zone file (when using Mode B)
 
 # Import example:
 #   terraform import desec_records.from_zonefile example.com
@@ -123,30 +123,30 @@ resource "desec_records" "exclusive" {
 
 ### Required
 
-- `domain` (String) The domain name to manage records for. Changing this forces a new resource.
+- `domain` (String) The domain name to manage RRsets for. Changing this forces a new resource.
 
 ### Optional
 
 - `exclusive` (Boolean) When `true`, only the declared RRsets may exist on the domain (excluding automatically managed types such as SOA, RRSIG, NSEC*, CDNSKEY, CDS, and apex NS). Any other RRsets found on the domain are deleted.
 
 When `false` (the default), this resource co-exists with other records on the domain and only manages the RRsets explicitly declared in the configuration.
-- `records` (Attributes Set) Structured set of RRset objects.
+- `rrsets` (Attributes Set) Structured set of RRset objects.
 
 Mutually exclusive with `zonefile`. When set, the `zonefile` attribute is computed. When `zonefile` is set instead, this attribute is computed from the parsed zone file.
 
-Each element represents one RRset (a unique `(subname, type)` pair). (see [below for nested schema](#nestedatt--records))
+Each element represents one RRset (a unique `(subname, type)` pair). (see [below for nested schema](#nestedatt--rrsets))
 - `zonefile` (String) Zone file content in RFC 1035 / BIND format.
 
-Mutually exclusive with `records`. When set, the `records` attribute is computed from the parsed zone file. When `records` is set instead, this attribute is computed as a canonical reconstruction of the live records.
+Mutually exclusive with `rrsets`. When set, the `rrsets` attribute is computed from the parsed zone file. When `rrsets` is set instead, this attribute is computed as a canonical reconstruction of the live RRsets.
 
-Format and ordering differences (comments, whitespace, record ordering) are suppressed: a plan will only show a diff when the set of records or their values actually change.
+Format and ordering differences (comments, whitespace, record ordering) are suppressed: a plan will only show a diff when the set of RRsets or their values actually change.
 
-<a id="nestedatt--records"></a>
-### Nested Schema for `records`
+<a id="nestedatt--rrsets"></a>
+### Nested Schema for `rrsets`
 
 Required:
 
-- `records` (Set of String) Record values in presentation format (RDATA only).
+- `rdata` (Set of String) RDATA values in presentation format.
 - `subname` (String) The subdomain component. Use `""` or `"@"` for the zone apex.
 - `ttl` (Number) Time-to-live in seconds.
 - `type` (String) The DNS record type (e.g. `A`, `AAAA`, `MX`, `TXT`). Must be uppercase.

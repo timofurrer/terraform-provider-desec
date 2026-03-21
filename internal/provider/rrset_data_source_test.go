@@ -13,7 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 )
 
-func TestAccRecordDataSource(t *testing.T) {
+func TestAccRRsetDataSource(t *testing.T) {
 	domainName := testAccDomainName(t, "rec-ds-acc")
 	providerConfig, factories := newTestAccEnv(t)
 
@@ -22,35 +22,35 @@ func TestAccRecordDataSource(t *testing.T) {
 		ProtoV6ProviderFactories: factories,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccRecordDataSourceConfig(providerConfig, domainName),
+				Config: testAccRRsetDataSourceConfig(providerConfig, domainName),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue(
-						"data.desec_record.test",
+						"data.desec_rrset.test",
 						tfjsonpath.New("domain"),
 						knownvalue.StringExact(domainName),
 					),
 					statecheck.ExpectKnownValue(
-						"data.desec_record.test",
+						"data.desec_rrset.test",
 						tfjsonpath.New("subname"),
 						knownvalue.StringExact("www"),
 					),
 					statecheck.ExpectKnownValue(
-						"data.desec_record.test",
+						"data.desec_rrset.test",
 						tfjsonpath.New("type"),
 						knownvalue.StringExact("A"),
 					),
 					statecheck.ExpectKnownValue(
-						"data.desec_record.test",
+						"data.desec_rrset.test",
 						tfjsonpath.New("ttl"),
 						knownvalue.Int64Exact(3600),
 					),
 					statecheck.ExpectKnownValue(
-						"data.desec_record.test",
-						tfjsonpath.New("records"),
+						"data.desec_rrset.test",
+						tfjsonpath.New("rdata"),
 						knownvalue.SetSizeExact(1),
 					),
 					statecheck.ExpectKnownValue(
-						"data.desec_record.test",
+						"data.desec_rrset.test",
 						tfjsonpath.New("name"),
 						knownvalue.NotNull(),
 					),
@@ -60,7 +60,7 @@ func TestAccRecordDataSource(t *testing.T) {
 	})
 }
 
-func testAccRecordDataSourceConfig(providerConfig, domainName string) string {
+func testAccRRsetDataSourceConfig(providerConfig, domainName string) string {
 	return fmt.Sprintf(`
 %s
 
@@ -68,18 +68,18 @@ resource "desec_domain" "test" {
   name = %q
 }
 
-resource "desec_record" "test" {
+resource "desec_rrset" "test" {
   domain  = desec_domain.test.name
   subname = "www"
   type    = "A"
   ttl     = 3600
-  records = ["1.2.3.4"]
+  rdata = ["1.2.3.4"]
 }
 
-data "desec_record" "test" {
+data "desec_rrset" "test" {
   domain  = desec_domain.test.name
-  subname = desec_record.test.subname
-  type    = desec_record.test.type
+  subname = desec_rrset.test.subname
+  type    = desec_rrset.test.type
 }
 `, providerConfig, domainName)
 }

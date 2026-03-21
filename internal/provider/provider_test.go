@@ -94,23 +94,23 @@ func TestAccProviderExample_DomainNameservers(t *testing.T) {
 				Config: testAccProviderExampleDomainNameserversConfig(providerConfig, domainName),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue(
-						"data.desec_record.nameservers",
+						"data.desec_rrset.nameservers",
 						tfjsonpath.New("domain"),
 						knownvalue.StringExact(domainName),
 					),
 					statecheck.ExpectKnownValue(
-						"data.desec_record.nameservers",
+						"data.desec_rrset.nameservers",
 						tfjsonpath.New("subname"),
 						knownvalue.StringExact("@"),
 					),
 					statecheck.ExpectKnownValue(
-						"data.desec_record.nameservers",
+						"data.desec_rrset.nameservers",
 						tfjsonpath.New("type"),
 						knownvalue.StringExact("NS"),
 					),
 					statecheck.ExpectKnownValue(
-						"data.desec_record.nameservers",
-						tfjsonpath.New("records"),
+						"data.desec_rrset.nameservers",
+						tfjsonpath.New("rdata"),
 						knownvalue.SetSizeExact(2),
 					),
 					statecheck.ExpectKnownOutputValue(
@@ -169,7 +169,7 @@ func TestAccProviderExample_BulkRecords(t *testing.T) {
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue(
 						"desec_records.bulk_example",
-						tfjsonpath.New("records"),
+						tfjsonpath.New("rrsets"),
 						knownvalue.SetSizeExact(3),
 					),
 					statecheck.ExpectKnownValue(
@@ -199,24 +199,24 @@ resource "desec_records" "bulk_example" {
   domain    = desec_domain.bulk_example.name
   exclusive = true
 
-  records = [
+  rrsets = [
     {
       subname = ""
       type    = "A"
       ttl     = 3600
-      records = ["203.0.113.10"]
+      rdata = ["203.0.113.10"]
     },
     {
       subname = "www"
       type    = "A"
       ttl     = 3600
-      records = ["203.0.113.10"]
+      rdata = ["203.0.113.10"]
     },
     {
       subname = ""
       type    = "MX"
       ttl     = 3600
-      records = ["10 mail.example.com."]
+      rdata = ["10 mail.example.com."]
     },
   ]
 }
@@ -256,7 +256,7 @@ resource "desec_domain" "example" {
   name = %q
 }
 
-data "desec_record" "nameservers" {
+data "desec_rrset" "nameservers" {
   domain  = desec_domain.example.name
   subname = "@"
   type    = "NS"
@@ -264,7 +264,7 @@ data "desec_record" "nameservers" {
 
 output "nameservers" {
   description = "The deSEC nameservers to enter at your domain registrar."
-  value       = data.desec_record.nameservers.records
+  value       = data.desec_rrset.nameservers.rdata
 }
 `, providerConfig, domainName)
 }

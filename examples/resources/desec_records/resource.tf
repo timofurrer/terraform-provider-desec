@@ -23,45 +23,45 @@ resource "desec_records" "from_zonefile" {
 
 # --- Mode B: Manage records via structured RRsets ---
 
-resource "desec_records" "from_records" {
+resource "desec_records" "from_rrsets" {
   domain = desec_domain.example.name
 
-  records = [
+  rrsets = [
     {
       subname = ""
       type    = "A"
       ttl     = 3600
-      records = ["203.0.113.10"]
+      rdata   = ["203.0.113.10"]
     },
     {
       subname = ""
       type    = "AAAA"
       ttl     = 3600
-      records = ["2001:db8::1"]
+      rdata   = ["2001:db8::1"]
     },
     {
       subname = "www"
       type    = "A"
       ttl     = 3600
-      records = ["203.0.113.10"]
+      rdata   = ["203.0.113.10"]
     },
     {
       subname = ""
       type    = "MX"
       ttl     = 3600
-      records = ["10 mail.example.com."]
+      rdata   = ["10 mail.example.com."]
     },
     {
       subname = "mail"
       type    = "A"
       ttl     = 3600
-      records = ["203.0.113.20"]
+      rdata   = ["203.0.113.20"]
     },
     {
       subname = ""
       type    = "TXT"
       ttl     = 3600
-      records = ["\"v=spf1 mx ~all\""]
+      rdata   = ["\"v=spf1 mx ~all\""]
     },
   ]
 
@@ -83,8 +83,8 @@ resource "desec_records" "exclusive" {
 }
 
 # Reference the computed attributes:
-#   desec_records.from_zonefile.records  — structured RRsets (when using Mode A)
-#   desec_records.from_records.zonefile  — canonical zone file (when using Mode B)
+#   desec_records.from_zonefile.rrsets   — structured RRsets (when using Mode A)
+#   desec_records.from_rrsets.zonefile   — canonical zone file (when using Mode B)
 
 # Import example:
 #   terraform import desec_records.from_zonefile example.com

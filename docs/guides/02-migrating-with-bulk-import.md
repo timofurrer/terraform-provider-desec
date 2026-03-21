@@ -36,7 +36,7 @@ list "desec_domain" "all" {
 To discover all DNS records for a specific domain:
 
 ```terraform
-list "desec_record" "all" {
+list "desec_rrset" "all" {
   provider = desec
   config {
     domain = "example.com"
@@ -53,8 +53,8 @@ list "desec_domain" "all" {
   provider = desec
 }
 
-# Discover all DNS records for a domain
-list "desec_record" "all" {
+# Discover all DNS RRsets for a domain
+list "desec_rrset" "all" {
   provider = desec
   config {
     domain = "example.com"
@@ -108,7 +108,7 @@ list "desec_domain" "all" {
   provider = desec
 }
 
-list "desec_record" "all" {
+list "desec_rrset" "all" {
   provider = desec
   config {
     domain = "example.com"
@@ -127,5 +127,5 @@ terraform apply
 ## Next Steps
 
 - To audit your account without importing, see [Auditing with List Resources](../guides/03-auditing-with-list-resources).
-- See the [`desec_domain`](../list-resources/domain) and [`desec_record`](../list-resources/record) list resource references for all query options.
+- See the [`desec_domain`](../list-resources/domain) and [`desec_rrset`](../list-resources/rrset) list resource references for all query options.
 - Refer to Terraform's [bulk import documentation](https://developer.hashicorp.com/terraform/language/import/bulk) for more details on the `terraform query` workflow.

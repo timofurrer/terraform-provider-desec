@@ -26,13 +26,10 @@ import (
 	"github.com/timofurrer/terraform-provider-desec/internal/api"
 )
 
-// Ensure RecordResource fully satisfies framework interfaces.
-var _ resource.Resource = (*recordResource)(nil)
-var _ resource.ResourceWithImportState = (*recordResource)(nil)
-var _ resource.ResourceWithIdentity = (*recordResource)(nil)
+var _ resource.Resource = (*rrsetResource)(nil)
+var _ resource.ResourceWithImportState = (*rrsetResource)(nil)
+var _ resource.ResourceWithIdentity = (*rrsetResource)(nil)
 
-// subnameStringType is a custom string type for the subname attribute.
-// It treats "" and "@" as semantically equal, both representing the zone apex.
 type subnameStringType struct {
 	basetypes.StringType
 }
@@ -75,8 +72,6 @@ func (t subnameStringType) ValueType(_ context.Context) attr.Value {
 	return subnameStringValue{}
 }
 
-// subnameStringValue is the value type for subnameStringType.
-// It implements semantic equality so that "" and "@" are treated as the same value.
 type subnameStringValue struct {
 	basetypes.StringValue
 }
@@ -96,9 +91,6 @@ func (v subnameStringValue) Type(_ context.Context) attr.Type {
 	return subnameStringType{}
 }
 
-// StringSemanticEquals returns true when both values represent the zone apex,
-// i.e. one is "" and the other is "@". This prevents a persistent plan diff
-// when the user writes subname = "" and the provider stores "@" in state.
 func (v subnameStringValue) StringSemanticEquals(_ context.Context, newValuable basetypes.StringValuable) (bool, diag.Diagnostics) {
 	newVal, ok := newValuable.(subnameStringValue)
 	if !ok {
@@ -110,22 +102,21 @@ func (v subnameStringValue) StringSemanticEquals(_ context.Context, newValuable 
 	return isApex(prior) && isApex(next), nil
 }
 
-// recordIdentityModel describes the identity of a record resource.
-type recordIdentityModel struct {
+type rrsetIdentityModel struct {
 	Domain  types.String `tfsdk:"domain"`
 	Subname types.String `tfsdk:"subname"`
 	Type    types.String `tfsdk:"type"`
 }
 
-func (r *recordResource) IdentitySchema(_ context.Context, _ resource.IdentitySchemaRequest, resp *resource.IdentitySchemaResponse) {
+func (r *rrsetResource) IdentitySchema(_ context.Context, _ resource.IdentitySchemaRequest, resp *resource.IdentitySchemaResponse) {
 	resp.IdentitySchema = identityschema.Schema{
 		Attributes: map[string]identityschema.Attribute{
 			"domain": identityschema.StringAttribute{
-				Description:       "The domain name this record belongs to.",
+				Description:       "The domain name this RRset belongs to.",
 				RequiredForImport: true,
 			},
 			"subname": identityschema.StringAttribute{
-				Description:       "The subdomain part of the record name.",
+				Description:       "The subdomain part of the RRset name.",
 				RequiredForImport: true,
 			},
 			"type": identityschema.StringAttribute{
@@ -136,33 +127,30 @@ func (r *recordResource) IdentitySchema(_ context.Context, _ resource.IdentitySc
 	}
 }
 
-// newRecordResource creates a new RecordResource.
-func newRecordResource() resource.Resource {
-	return &recordResource{}
+func newRRsetResource() resource.Resource {
+	return &rrsetResource{}
 }
 
-// recordResource manages a deSEC RRset (DNS resource record set).
-type recordResource struct {
+type rrsetResource struct {
 	client *api.Client
 }
 
-// recordResourceModel describes the resource data model.
-type recordResourceModel struct {
+type rrsetResourceModel struct {
 	ID      types.String       `tfsdk:"id"`
 	Domain  types.String       `tfsdk:"domain"`
 	Subname subnameStringValue `tfsdk:"subname"`
 	Type    types.String       `tfsdk:"type"`
 	TTL     types.Int64        `tfsdk:"ttl"`
-	Records types.Set          `tfsdk:"records"`
+	RData   types.Set          `tfsdk:"rdata"`
 	Created types.String       `tfsdk:"created"`
 	Touched types.String       `tfsdk:"touched"`
 }
 
-func (r *recordResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_record"
+func (r *rrsetResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_rrset"
 }
 
-func (r *recordResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+func (r *rrsetResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Manages a deSEC DNS Resource Record Set (RRset). An RRset is the set of all DNS records of a given type for a given name within a domain.\n\n" +
 			"Use `@` as the `subname` to manage records at the zone apex (root of the domain).",
@@ -176,7 +164,7 @@ func (r *recordResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				},
 			},
 			"domain": schema.StringAttribute{
-				MarkdownDescription: "The domain name that this record belongs to.",
+				MarkdownDescription: "The domain name that this RRset belongs to.",
 				Required:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
@@ -184,7 +172,7 @@ func (r *recordResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			},
 			"subname": schema.StringAttribute{
 				CustomType:          subnameStringType{},
-				MarkdownDescription: "The subdomain part of the record name. Use `@` or `\"\"` for the zone apex (root of the domain).",
+				MarkdownDescription: "The subdomain part of the RRset name. Use `@` or `\"\"` for the zone apex (root of the domain).",
 				Required:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
@@ -207,8 +195,8 @@ func (r *recordResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 					int64validator.AtLeast(1),
 				},
 			},
-			"records": schema.SetAttribute{
-				MarkdownDescription: "The set of record content strings. The format depends on the record type. For example, `A` records contain IPv4 addresses, `MX` records contain `priority hostname.` pairs.",
+			"rdata": schema.SetAttribute{
+				MarkdownDescription: "The set of RDATA strings. The format depends on the record type. For example, `A` records contain IPv4 addresses, `MX` records contain `priority hostname.` pairs.",
 				Required:            true,
 				ElementType:         types.StringType,
 			},
@@ -227,7 +215,7 @@ func (r *recordResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 	}
 }
 
-func (r *recordResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+func (r *rrsetResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	if req.ProviderData == nil {
 		return
 	}
@@ -242,14 +230,14 @@ func (r *recordResource) Configure(_ context.Context, req resource.ConfigureRequ
 	r.client = client
 }
 
-func (r *recordResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var data recordResourceModel
+func (r *rrsetResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
+	var data rrsetResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	records, diags := recordsFromSet(ctx, data.Records)
+	rdata, diags := rdataFromSet(ctx, data.RData)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -261,12 +249,12 @@ func (r *recordResource) Create(ctx context.Context, req resource.CreateRequest,
 			Subname: data.Subname.ValueString(),
 			Type:    data.Type.ValueString(),
 			TTL:     int(data.TTL.ValueInt64()),
-			Records: records,
+			Records: rdata,
 		},
 	)
 	if err != nil {
-		resp.Diagnostics.AddError("Error Creating Record",
-			fmt.Sprintf("Unable to create record %s/%s/%s: %s",
+		resp.Diagnostics.AddError("Error Creating RRset",
+			fmt.Sprintf("Unable to create RRset %s/%s/%s: %s",
 				data.Domain.ValueString(), data.Subname.ValueString(), data.Type.ValueString(), err))
 		return
 	}
@@ -277,15 +265,15 @@ func (r *recordResource) Create(ctx context.Context, req resource.CreateRequest,
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
-	resp.Diagnostics.Append(resp.Identity.Set(ctx, recordIdentityModel{
+	resp.Diagnostics.Append(resp.Identity.Set(ctx, rrsetIdentityModel{
 		Domain:  data.Domain,
 		Subname: types.StringValue(data.Subname.ValueString()),
 		Type:    data.Type,
 	})...)
 }
 
-func (r *recordResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	var data recordResourceModel
+func (r *rrsetResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
+	var data rrsetResourceModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -301,8 +289,8 @@ func (r *recordResource) Read(ctx context.Context, req resource.ReadRequest, res
 			resp.State.RemoveResource(ctx)
 			return
 		}
-		resp.Diagnostics.AddError("Error Reading Record",
-			fmt.Sprintf("Unable to read record %s/%s/%s: %s",
+		resp.Diagnostics.AddError("Error Reading RRset",
+			fmt.Sprintf("Unable to read RRset %s/%s/%s: %s",
 				data.Domain.ValueString(), data.Subname.ValueString(), data.Type.ValueString(), err))
 		return
 	}
@@ -313,21 +301,21 @@ func (r *recordResource) Read(ctx context.Context, req resource.ReadRequest, res
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
-	resp.Diagnostics.Append(resp.Identity.Set(ctx, recordIdentityModel{
+	resp.Diagnostics.Append(resp.Identity.Set(ctx, rrsetIdentityModel{
 		Domain:  data.Domain,
 		Subname: types.StringValue(data.Subname.ValueString()),
 		Type:    data.Type,
 	})...)
 }
 
-func (r *recordResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var data recordResourceModel
+func (r *rrsetResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	var data rrsetResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	records, diags := recordsFromSet(ctx, data.Records)
+	rdata, diags := rdataFromSet(ctx, data.RData)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -339,12 +327,12 @@ func (r *recordResource) Update(ctx context.Context, req resource.UpdateRequest,
 		data.Type.ValueString(),
 		api.UpdateRRsetOptions{
 			TTL:     int(data.TTL.ValueInt64()),
-			Records: records,
+			Records: rdata,
 		},
 	)
 	if err != nil {
-		resp.Diagnostics.AddError("Error Updating Record",
-			fmt.Sprintf("Unable to update record %s/%s/%s: %s",
+		resp.Diagnostics.AddError("Error Updating RRset",
+			fmt.Sprintf("Unable to update RRset %s/%s/%s: %s",
 				data.Domain.ValueString(), data.Subname.ValueString(), data.Type.ValueString(), err))
 		return
 	}
@@ -357,8 +345,8 @@ func (r *recordResource) Update(ctx context.Context, req resource.UpdateRequest,
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-func (r *recordResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	var data recordResourceModel
+func (r *rrsetResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+	var data rrsetResourceModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -372,18 +360,14 @@ func (r *recordResource) Delete(ctx context.Context, req resource.DeleteRequest,
 		if api.IsNotFound(err) {
 			return
 		}
-		resp.Diagnostics.AddError("Error Deleting Record",
-			fmt.Sprintf("Unable to delete record %s/%s/%s: %s",
+		resp.Diagnostics.AddError("Error Deleting RRset",
+			fmt.Sprintf("Unable to delete RRset %s/%s/%s: %s",
 				data.Domain.ValueString(), data.Subname.ValueString(), data.Type.ValueString(), err))
 	}
 }
 
-func (r *recordResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+func (r *rrsetResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	if req.ID != "" {
-		// Import format: "domain/subname/type".
-		// The canonical apex form is "example.com/@/A"; the empty-segment form
-		// "example.com//A" is also accepted. Both are normalised to "@" here so
-		// that the intermediate import state is consistent with post-Read state.
 		parts := strings.SplitN(req.ID, "/", 3)
 		if len(parts) != 3 {
 			resp.Diagnostics.AddError(
@@ -397,7 +381,7 @@ func (r *recordResource) ImportState(ctx context.Context, req resource.ImportSta
 		resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("type"), parts[2])...)
 		return
 	}
-	var identity recordIdentityModel
+	var identity rrsetIdentityModel
 	resp.Diagnostics.Append(req.Identity.Get(ctx, &identity)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -407,8 +391,6 @@ func (r *recordResource) ImportState(ctx context.Context, req resource.ImportSta
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("type"), identity.Type)...)
 }
 
-// normalizeSubname converts an empty subname (zone apex as returned by the API)
-// to "@" for consistent representation in Terraform state and import IDs.
 func normalizeSubname(subname string) string {
 	if subname == "" {
 		return "@"
@@ -416,8 +398,7 @@ func normalizeSubname(subname string) string {
 	return subname
 }
 
-// rrsetToModel converts an api.RRset into a RecordResourceModel.
-func rrsetToModel(ctx context.Context, rs *api.RRset, m *recordResourceModel) diag.Diagnostics {
+func rrsetToModel(ctx context.Context, rs *api.RRset, m *rrsetResourceModel) diag.Diagnostics {
 	subname := normalizeSubname(rs.Subname)
 	m.ID = types.StringValue(rs.Domain + "/" + subname + "/" + rs.Type)
 	m.Domain = types.StringValue(rs.Domain)
@@ -427,20 +408,19 @@ func rrsetToModel(ctx context.Context, rs *api.RRset, m *recordResourceModel) di
 	m.Created = types.StringValue(rs.Created)
 	m.Touched = types.StringValue(rs.Touched)
 
-	recordVals := make([]string, len(rs.Records))
-	copy(recordVals, rs.Records)
+	rdataVals := make([]string, len(rs.Records))
+	copy(rdataVals, rs.Records)
 
-	setVal, diags := types.SetValueFrom(ctx, types.StringType, recordVals)
+	setVal, diags := types.SetValueFrom(ctx, types.StringType, rdataVals)
 	if diags.HasError() {
 		return diags
 	}
-	m.Records = setVal
+	m.RData = setVal
 	return diags
 }
 
-// recordsFromSet extracts the string slice from a types.Set of strings.
-func recordsFromSet(ctx context.Context, s types.Set) ([]string, diag.Diagnostics) {
-	var records []string
-	diags := s.ElementsAs(ctx, &records, false)
-	return records, diags
+func rdataFromSet(ctx context.Context, s types.Set) ([]string, diag.Diagnostics) {
+	var rdata []string
+	diags := s.ElementsAs(ctx, &rdata, false)
+	return rdata, diags
 }

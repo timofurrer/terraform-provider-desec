@@ -67,11 +67,11 @@ list "desec_domain" "owns" {
 
 ## Auditing DNS Records
 
-Use the `desec_record` list resource to enumerate RRsets within a domain. The `domain` config
+Use the `desec_rrset` list resource to enumerate RRsets within a domain. The `domain` config
 attribute is required; you can optionally filter by `type` and `subname`:
 
 ```terraform
-list "desec_record" "all" {
+list "desec_rrset" "all" {
   provider = desec
   config {
     domain = "example.com"
@@ -82,7 +82,7 @@ list "desec_record" "all" {
 Filter to only A records:
 
 ```terraform
-list "desec_record" "a_records" {
+list "desec_rrset" "a_records" {
   provider = desec
   config {
     domain = "example.com"
@@ -94,7 +94,7 @@ list "desec_record" "a_records" {
 Filter to a specific subdomain:
 
 ```terraform
-list "desec_record" "www" {
+list "desec_rrset" "www" {
   provider = desec
   config {
     domain  = "example.com"
@@ -104,16 +104,16 @@ list "desec_record" "www" {
 ```
 
 ```terraform
-# List all DNS records for a domain
-list "desec_record" "all" {
+# List all DNS RRsets for a domain
+list "desec_rrset" "all" {
   provider = desec
   config {
     domain = "example.com"
   }
 }
 
-# List only A records
-list "desec_record" "a_records" {
+# List only A RRsets
+list "desec_rrset" "a_records" {
   provider = desec
   config {
     domain = "example.com"
@@ -121,8 +121,8 @@ list "desec_record" "a_records" {
   }
 }
 
-# List records for a specific subdomain
-list "desec_record" "www" {
+# List RRsets for a specific subdomain
+list "desec_rrset" "www" {
   provider = desec
   config {
     domain  = "example.com"
@@ -171,6 +171,6 @@ list "desec_token_policy" "all" {
 ## Next Steps
 
 - See the [`desec_domain`](../list-resources/domain) list resource reference for domain query options.
-- See the [`desec_record`](../list-resources/record) list resource reference for record query options.
+- See the [`desec_rrset`](../list-resources/rrset) list resource reference for record query options.
 - See the [`desec_token`](../list-resources/token) and [`desec_token_policy`](../list-resources/token_policy) list resource references for token auditing.
 - To bring discovered resources under TF management, see [Migrating to TF with Bulk Import and Config Bootstrapping](../guides/02-migrating-with-bulk-import).

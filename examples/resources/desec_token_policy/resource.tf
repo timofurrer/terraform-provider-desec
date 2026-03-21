@@ -22,7 +22,7 @@ resource "desec_token_policy" "example_all" {
   depends_on = [desec_token_policy.default]
 }
 
-# Allow the token to write only the www A record within the domain.
+# Allow the token to write only the www A RRset within the domain.
 resource "desec_token_policy" "example_www_a" {
   token_id   = desec_token.ci.id
   domain     = desec_domain.example.name

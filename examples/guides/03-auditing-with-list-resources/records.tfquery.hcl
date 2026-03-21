@@ -1,13 +1,13 @@
-# List all DNS records for a domain
-list "desec_record" "all" {
+# List all DNS RRsets for a domain
+list "desec_rrset" "all" {
   provider = desec
   config {
     domain = "example.com"
   }
 }
 
-# List only A records
-list "desec_record" "a_records" {
+# List only A RRsets
+list "desec_rrset" "a_records" {
   provider = desec
   config {
     domain = "example.com"
@@ -15,8 +15,8 @@ list "desec_record" "a_records" {
   }
 }
 
-# List records for a specific subdomain
-list "desec_record" "www" {
+# List RRsets for a specific subdomain
+list "desec_rrset" "www" {
   provider = desec
   config {
     domain  = "example.com"

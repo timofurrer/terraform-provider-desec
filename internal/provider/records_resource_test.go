@@ -33,7 +33,7 @@ func TestAccRecordsResource_zonefileBasic(t *testing.T) {
 					statecheck.ExpectKnownValue("desec_records.test",
 						tfjsonpath.New("domain"), knownvalue.StringExact(domainName)),
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(2)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(2)),
 					statecheck.ExpectKnownValue("desec_records.test",
 						tfjsonpath.New("zonefile"), knownvalue.NotNull()),
 				},
@@ -55,7 +55,7 @@ func TestAccRecordsResource_zonefileUpdate(t *testing.T) {
 					"www.%s. 3600 IN A 1.2.3.4\n", domainName)),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(1)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(1)),
 				},
 			},
 			{
@@ -63,7 +63,7 @@ func TestAccRecordsResource_zonefileUpdate(t *testing.T) {
 					"www.%s. 3600 IN A 9.9.9.9\n%s. 3600 IN MX 10 mail.%s.\n", domainName, domainName, domainName)),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(2)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(2)),
 				},
 			},
 			{
@@ -71,7 +71,7 @@ func TestAccRecordsResource_zonefileUpdate(t *testing.T) {
 					"www.%s. 3600 IN A 9.9.9.9\n", domainName)),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(1)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(1)),
 				},
 			},
 		},
@@ -96,7 +96,7 @@ func TestAccRecordsResource_zonefileSemanticEquivalence(t *testing.T) {
 				Config: testAccRecordsZonefileConfig(providerConfig, domainName, zonefile),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(2)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(2)),
 				},
 			},
 			{
@@ -123,20 +123,20 @@ func TestAccRecordsResource_recordsBasic(t *testing.T) {
       subname = ""
       type    = "A"
       ttl     = 3600
-      records = ["1.2.3.4"]
+      rdata = ["1.2.3.4"]
     },
     {
       subname = "www"
       type    = "A"
       ttl     = 3600
-      records = ["5.6.7.8"]
+      rdata = ["5.6.7.8"]
     },
 `),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
 						tfjsonpath.New("domain"), knownvalue.StringExact(domainName)),
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(2)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(2)),
 					statecheck.ExpectKnownValue("desec_records.test",
 						tfjsonpath.New("zonefile"), knownvalue.NotNull()),
 				},
@@ -159,12 +159,12 @@ func TestAccRecordsResource_recordsUpdate(t *testing.T) {
       subname = "www"
       type    = "A"
       ttl     = 3600
-      records = ["1.2.3.4"]
+      rdata = ["1.2.3.4"]
     },
 `),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(1)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(1)),
 				},
 			},
 			{
@@ -173,18 +173,18 @@ func TestAccRecordsResource_recordsUpdate(t *testing.T) {
       subname = "www"
       type    = "A"
       ttl     = 3600
-      records = ["9.9.9.9"]
+      rdata = ["9.9.9.9"]
     },
     {
       subname = ""
       type    = "MX"
       ttl     = 3600
-      records = ["10 mail.`+domainName+`."]
+      rdata = ["10 mail.`+domainName+`."]
     },
 `),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(2)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(2)),
 				},
 			},
 			{
@@ -193,12 +193,12 @@ func TestAccRecordsResource_recordsUpdate(t *testing.T) {
       subname = "www"
       type    = "A"
       ttl     = 3600
-      records = ["9.9.9.9"]
+      rdata = ["9.9.9.9"]
     },
 `),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(1)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(1)),
 				},
 			},
 		},
@@ -219,12 +219,12 @@ func TestAccRecordsResource_recordsApexAt(t *testing.T) {
       subname = "@"
       type    = "A"
       ttl     = 3600
-      records = ["1.2.3.4"]
+      rdata = ["1.2.3.4"]
     },
 `),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(1)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(1)),
 				},
 			},
 		},
@@ -246,7 +246,7 @@ func TestAccRecordsResource_drift(t *testing.T) {
 					"www.%s. 3600 IN A 1.2.3.4\nmail.%s. 3600 IN A 2.3.4.5\n", domainName, domainName)),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(2)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(2)),
 				},
 			},
 			{
@@ -265,7 +265,7 @@ func TestAccRecordsResource_drift(t *testing.T) {
 					"www.%s. 3600 IN A 1.2.3.4\nmail.%s. 3600 IN A 2.3.4.5\n", domainName, domainName)),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(2)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(2)),
 				},
 			},
 		},
@@ -324,7 +324,7 @@ resource "desec_records" "test" {
   depends_on = [desec_domain.test]
 }
 `, providerConfig, domainName),
-				ExpectError: regexp.MustCompile(`Exactly one of "zonefile" or "records" must be specified`),
+				ExpectError: regexp.MustCompile(`Exactly one of "zonefile" or "rrsets" must be specified`),
 			},
 		},
 	})
@@ -347,12 +347,12 @@ resource "desec_domain" "test" {
   name = %q
 }
 
-resource "desec_record" "extra" {
+resource "desec_rrset" "extra" {
   domain  = desec_domain.test.name
   subname = "extra"
   type    = "A"
   ttl     = 3600
-  records = ["9.9.9.9"]
+  rdata = ["9.9.9.9"]
 }
 `, providerConfig, domainName),
 			},
@@ -376,7 +376,7 @@ resource "desec_records" "test" {
 `, providerConfig, domainName, domainName),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(1)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(1)),
 				},
 			},
 		},
@@ -411,7 +411,7 @@ resource "desec_records" "test" {
 				Config: config,
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(1)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(1)),
 				},
 			},
 			// Add an out-of-band record via the API.
@@ -437,7 +437,7 @@ resource "desec_records" "test" {
 				Config: config,
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(1)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(1)),
 				},
 			},
 		},
@@ -488,7 +488,7 @@ resource "desec_records" "test" {
 				Config: configNonExclusive,
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(1)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(1)),
 				},
 			},
 			{
@@ -539,18 +539,18 @@ resource "desec_records" "test" {
   depends_on = [desec_domain.test]
 }
 
-resource "desec_record" "other" {
+resource "desec_rrset" "other" {
   domain  = desec_domain.test.name
   subname = "other"
   type    = "A"
   ttl     = 3600
-  records = ["8.8.8.8"]
+  rdata = ["8.8.8.8"]
 }
 `, providerConfig, domainName, domainName),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(1)),
-					statecheck.ExpectKnownValue("desec_record.other",
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(1)),
+					statecheck.ExpectKnownValue("desec_rrset.other",
 						tfjsonpath.New("subname"), knownvalue.StringExact("other")),
 				},
 			},
@@ -574,7 +574,7 @@ resource "desec_records" "test" {
 `, providerConfig, domainName, domainName),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(1)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(1)),
 				},
 			},
 		},
@@ -600,19 +600,19 @@ resource "desec_domain" "test" {
 resource "desec_records" "test" {
   domain   = desec_domain.test.name
   zonefile = "www.%s. 3600 IN A 1.2.3.4\n"
-  records = [
+  rrsets = [
     {
       subname = "www"
       type    = "A"
       ttl     = 3600
-      records = ["1.2.3.4"]
+      rdata = ["1.2.3.4"]
     },
   ]
 
   depends_on = [desec_domain.test]
 }
 `, providerConfig, domainName, domainName),
-				ExpectError: regexp.MustCompile(`Only one of "zonefile" or "records" may be specified`),
+				ExpectError: regexp.MustCompile(`Only one of "zonefile" or "rrsets" may be specified`),
 			},
 		},
 	})
@@ -632,7 +632,7 @@ func TestAccRecordsResource_invalidTypeLowercase(t *testing.T) {
       subname = "www"
       type    = "a"
       ttl     = 3600
-      records = ["1.2.3.4"]
+      rdata = ["1.2.3.4"]
     },
 `),
 				ExpectError: regexp.MustCompile(`must be an uppercase DNS record type`),
@@ -655,7 +655,7 @@ func TestAccRecordsResource_invalidTTLZero(t *testing.T) {
       subname = "www"
       type    = "A"
       ttl     = 0
-      records = ["1.2.3.4"]
+      rdata = ["1.2.3.4"]
     },
 `),
 				ExpectError: regexp.MustCompile(`must be at least 1`),
@@ -678,13 +678,13 @@ func TestAccRecordsResource_duplicateSubnameType(t *testing.T) {
       subname = "www"
       type    = "A"
       ttl     = 3600
-      records = ["1.2.3.4"]
+      rdata = ["1.2.3.4"]
     },
     {
       subname = "www"
       type    = "A"
       ttl     = 7200
-      records = ["5.6.7.8"]
+      rdata = ["5.6.7.8"]
     },
 `),
 				ExpectError: regexp.MustCompile(`Duplicate RRset`),
@@ -706,7 +706,7 @@ func TestAccRecordsResource_switchZonefileToRecords(t *testing.T) {
 					"www.%s. 3600 IN A 1.2.3.4\n%s. 3600 IN MX 10 mail.%s.\n", domainName, domainName, domainName)),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(2)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(2)),
 				},
 			},
 			{
@@ -715,18 +715,18 @@ func TestAccRecordsResource_switchZonefileToRecords(t *testing.T) {
       subname = "www"
       type    = "A"
       ttl     = 3600
-      records = ["1.2.3.4"]
+      rdata = ["1.2.3.4"]
     },
     {
       subname = ""
       type    = "MX"
       ttl     = 3600
-      records = ["10 mail.`+domainName+`."]
+      rdata = ["10 mail.`+domainName+`."]
     },
 `),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(2)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(2)),
 					statecheck.ExpectKnownValue("desec_records.test",
 						tfjsonpath.New("zonefile"), knownvalue.NotNull()),
 				},
@@ -737,13 +737,13 @@ func TestAccRecordsResource_switchZonefileToRecords(t *testing.T) {
       subname = "www"
       type    = "A"
       ttl     = 3600
-      records = ["1.2.3.4"]
+      rdata = ["1.2.3.4"]
     },
     {
       subname = ""
       type    = "MX"
       ttl     = 3600
-      records = ["10 mail.`+domainName+`."]
+      rdata = ["10 mail.`+domainName+`."]
     },
 `),
 				PlanOnly:           true,
@@ -767,18 +767,18 @@ func TestAccRecordsResource_switchRecordsToZonefile(t *testing.T) {
       subname = "www"
       type    = "A"
       ttl     = 3600
-      records = ["1.2.3.4"]
+      rdata = ["1.2.3.4"]
     },
     {
       subname = ""
       type    = "MX"
       ttl     = 3600
-      records = ["10 mail.`+domainName+`."]
+      rdata = ["10 mail.`+domainName+`."]
     },
 `),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(2)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(2)),
 				},
 			},
 			{
@@ -786,7 +786,7 @@ func TestAccRecordsResource_switchRecordsToZonefile(t *testing.T) {
 					"www.%s. 3600 IN A 1.2.3.4\n%s. 3600 IN MX 10 mail.%s.\n", domainName, domainName, domainName)),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(2)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(2)),
 					statecheck.ExpectKnownValue("desec_records.test",
 						tfjsonpath.New("zonefile"), knownvalue.NotNull()),
 				},
@@ -856,7 +856,7 @@ srv.%[1]s.      3600 IN SRV   10 60 5060 sip.%[1]s.
 				Config: testAccRecordsZonefileConfig(providerConfig, domainName, complexZonefile),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(7)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(7)),
 				},
 			},
 			// Reorder everything + change comments → expect no diff.
@@ -869,7 +869,7 @@ srv.%[1]s.      3600 IN SRV   10 60 5060 sip.%[1]s.
 				Config: testAccRecordsZonefileConfig(providerConfig, domainName, complexZonefileUpdated),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(7)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(7)),
 				},
 			},
 		},
@@ -898,7 +898,7 @@ func TestAccRecordsResource_zonefileMultiValueRRset(t *testing.T) {
 				Config: testAccRecordsZonefileConfig(providerConfig, domainName, zonefile),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(1)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(1)),
 				},
 			},
 			// Reverse value order → expect no diff.
@@ -931,7 +931,7 @@ mail IN A     9.10.11.12
 				ConfigStateChecks: []statecheck.StateCheck{
 					// @/A, www/A, mail/A, @/MX = 4 RRsets
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(4)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(4)),
 				},
 			},
 		},
@@ -958,7 +958,7 @@ www.%[1]s. 3600 IN A 1.2.3.4
 				ConfigStateChecks: []statecheck.StateCheck{
 					// SOA and apex NS are silently skipped; only www A remains.
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(1)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(1)),
 				},
 			},
 		},
@@ -979,12 +979,12 @@ func TestAccRecordsResource_recordsMultiValue(t *testing.T) {
       subname = "www"
       type    = "A"
       ttl     = 3600
-      records = ["5.6.7.8", "1.2.3.4", "9.10.11.12"]
+      rdata = ["5.6.7.8", "1.2.3.4", "9.10.11.12"]
     },
 `),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(1)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(1)),
 				},
 			},
 			// Reorder record values within the set → expect no diff.
@@ -994,7 +994,7 @@ func TestAccRecordsResource_recordsMultiValue(t *testing.T) {
       subname = "www"
       type    = "A"
       ttl     = 3600
-      records = ["9.10.11.12", "1.2.3.4", "5.6.7.8"]
+      rdata = ["9.10.11.12", "1.2.3.4", "5.6.7.8"]
     },
 `),
 				ExpectNonEmptyPlan: false,
@@ -1017,24 +1017,24 @@ func TestAccRecordsResource_recordsReorder(t *testing.T) {
       subname = "www"
       type    = "A"
       ttl     = 3600
-      records = ["1.2.3.4"]
+      rdata = ["1.2.3.4"]
     },
     {
       subname = "mail"
       type    = "A"
       ttl     = 3600
-      records = ["2.3.4.5"]
+      rdata = ["2.3.4.5"]
     },
     {
       subname = ""
       type    = "MX"
       ttl     = 3600
-      records = ["10 mail.`+domainName+`."]
+      rdata = ["10 mail.`+domainName+`."]
     },
 `),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(3)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(3)),
 				},
 			},
 			// Completely reverse the order of RRset objects → expect no diff (set semantics).
@@ -1044,19 +1044,19 @@ func TestAccRecordsResource_recordsReorder(t *testing.T) {
       subname = ""
       type    = "MX"
       ttl     = 3600
-      records = ["10 mail.`+domainName+`."]
+      rdata = ["10 mail.`+domainName+`."]
     },
     {
       subname = "mail"
       type    = "A"
       ttl     = 3600
-      records = ["2.3.4.5"]
+      rdata = ["2.3.4.5"]
     },
     {
       subname = "www"
       type    = "A"
       ttl     = 3600
-      records = ["1.2.3.4"]
+      rdata = ["1.2.3.4"]
     },
 `),
 				ExpectNonEmptyPlan: false,
@@ -1079,12 +1079,12 @@ func TestAccRecordsResource_recordsTTLChange(t *testing.T) {
       subname = "www"
       type    = "A"
       ttl     = 3600
-      records = ["1.2.3.4"]
+      rdata = ["1.2.3.4"]
     },
 `),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(1)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(1)),
 				},
 			},
 			{
@@ -1093,12 +1093,12 @@ func TestAccRecordsResource_recordsTTLChange(t *testing.T) {
       subname = "www"
       type    = "A"
       ttl     = 7200
-      records = ["1.2.3.4"]
+      rdata = ["1.2.3.4"]
     },
 `),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(1)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(1)),
 				},
 			},
 		},
@@ -1114,13 +1114,13 @@ func TestAccRecordsResource_driftModeB(t *testing.T) {
       subname = "www"
       type    = "A"
       ttl     = 3600
-      records = ["1.2.3.4"]
+      rdata = ["1.2.3.4"]
     },
     {
       subname = "mail"
       type    = "A"
       ttl     = 3600
-      records = ["2.3.4.5"]
+      rdata = ["2.3.4.5"]
     },
 `
 
@@ -1132,7 +1132,7 @@ func TestAccRecordsResource_driftModeB(t *testing.T) {
 				Config: testAccRecordsSetConfig(providerConfig, domainName, recordsHCL),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(2)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(2)),
 				},
 			},
 			{
@@ -1149,7 +1149,7 @@ func TestAccRecordsResource_driftModeB(t *testing.T) {
 				Config: testAccRecordsSetConfig(providerConfig, domainName, recordsHCL),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(2)),
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(2)),
 				},
 			},
 		},
@@ -1168,8 +1168,8 @@ func TestAccRecordsResource_coexistWithRecord(t *testing.T) {
 				Config: testAccRecordsCoexistConfig(providerConfig, domainName),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue("desec_records.test",
-						tfjsonpath.New("records"), knownvalue.SetSizeExact(1)),
-					statecheck.ExpectKnownValue("desec_record.mail",
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(1)),
+					statecheck.ExpectKnownValue("desec_rrset.mail",
 						tfjsonpath.New("subname"), knownvalue.StringExact("mail")),
 				},
 			},
@@ -1196,7 +1196,7 @@ resource "desec_records" "test" {
 `, providerConfig, domainName, zonefile)
 }
 
-func testAccRecordsSetConfig(providerConfig, domainName, recordsHCL string) string {
+func testAccRecordsSetConfig(providerConfig, domainName, rrsetsHCL string) string {
 	return fmt.Sprintf(`
 %s
 
@@ -1207,13 +1207,13 @@ resource "desec_domain" "test" {
 resource "desec_records" "test" {
   domain = desec_domain.test.name
 
-  records = [
+  rrsets = [
 %s
   ]
 
   depends_on = [desec_domain.test]
 }
-`, providerConfig, domainName, recordsHCL)
+`, providerConfig, domainName, rrsetsHCL)
 }
 
 func testAccRecordsImportSetup(providerConfig, domainName string) string {
@@ -1224,19 +1224,19 @@ resource "desec_domain" "test" {
   name = %q
 }
 
-resource "desec_record" "www" {
+resource "desec_rrset" "www" {
   domain  = desec_domain.test.name
   subname = "www"
   type    = "A"
   ttl     = 3600
-  records = ["1.2.3.4"]
+  rdata = ["1.2.3.4"]
 }
 
 resource "desec_records" "imported" {
   domain   = desec_domain.test.name
   zonefile = "www.%s. 3600 IN A 1.2.3.4\n"
 
-  depends_on = [desec_record.www]
+  depends_on = [desec_rrset.www]
 }
 `, providerConfig, domainName, domainName)
 }
@@ -1256,12 +1256,12 @@ resource "desec_records" "test" {
   depends_on = [desec_domain.test]
 }
 
-resource "desec_record" "mail" {
+resource "desec_rrset" "mail" {
   domain  = desec_domain.test.name
   subname = "mail"
   type    = "A"
   ttl     = 3600
-  records = ["2.3.4.5"]
+  rdata = ["2.3.4.5"]
 }
 `, providerConfig, domainName, domainName)
 }
@@ -1396,7 +1396,7 @@ func TestSetStateAfterWrite_recordsMode(t *testing.T) {
 		Domain:    types.StringValue("example.com"),
 		Exclusive: types.BoolValue(false),
 		Zonefile:  types.StringNull(),
-		Records:   planSet,
+		RRsets:    planSet,
 	}
 
 	returned := []api.RRset{
@@ -1408,7 +1408,7 @@ func TestSetStateAfterWrite_recordsMode(t *testing.T) {
 		t.Fatalf("setStateAfterWrite: %v", diags)
 	}
 
-	gotRRsets, diags := recordsSetToAPIRRsets(ctx, data.Records)
+	gotRRsets, diags := recordsSetToAPIRRsets(ctx, data.RRsets)
 	if diags.HasError() {
 		t.Fatalf("recordsSetToAPIRRsets: %v", diags)
 	}

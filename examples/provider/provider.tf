@@ -9,7 +9,7 @@ resource "desec_domain" "example" {
   name = "example.com"
 }
 
-data "desec_record" "nameservers" {
+data "desec_rrset" "nameservers" {
   domain  = desec_domain.example.name
   subname = "@"
   type    = "NS"
@@ -17,7 +17,7 @@ data "desec_record" "nameservers" {
 
 output "nameservers" {
   description = "The deSEC nameservers to enter at your domain registrar."
-  value       = data.desec_record.nameservers.records
+  value       = data.desec_rrset.nameservers.rdata
 }
 
 # DNSSEC: once the domain is delegated to deSEC nameservers, retrieve the
@@ -40,7 +40,7 @@ output "dnssec_dnskeys" {
 #
 # The bootstrap provider creates the domain and all token scoping policies.
 # Once the scoped token and its policies are in place, the lazily-initialized
-# provider uses that token to manage DNS records for the domain.
+# provider uses that token to manage DNS RRsets for the domain.
 provider "desec" {
   alias     = "bootstrap"
   api_token = "your-desec-api-token"
@@ -79,12 +79,12 @@ resource "desec_token_policy" "lazy_token_domain" {
   depends_on = [desec_token_policy.lazy_token_default, desec_domain.example]
 }
 
-# The lazy provider manages records on the domain, proving it initialized correctly.
-resource "desec_record" "example_a" {
+# The lazy provider manages RRsets on the domain, proving it initialized correctly.
+resource "desec_rrset" "example_a" {
   domain  = desec_domain.example.name
   subname = "@"
   type    = "A"
-  records = ["203.0.113.1"]
+  rdata   = ["203.0.113.1"]
   ttl     = 3600
 
   depends_on = [desec_token_policy.lazy_token_domain]
@@ -103,10 +103,10 @@ output "idn_domain_unicode" {
   value       = provider::desec::from_punycode(desec_domain.idn_example.name)
 }
 
-# Bulk DNS record management: use desec_records to manage multiple RRsets at
-# once, either via a zone file or structured records. With exclusive = true,
-# any records on the domain not declared here are deleted — ensuring no
-# unmanaged records exist.
+# Bulk DNS RRset management: use desec_records to manage multiple RRsets at
+# once, either via a zone file or structured RRsets. With exclusive = true,
+# any RRsets on the domain not declared here are deleted — ensuring no
+# unmanaged RRsets exist.
 resource "desec_domain" "bulk_example" {
   name = "bulk.example.dedyn.io"
 }
@@ -115,29 +115,29 @@ resource "desec_records" "bulk_example" {
   domain    = desec_domain.bulk_example.name
   exclusive = true
 
-  records = [
+  rrsets = [
     {
       subname = ""
       type    = "A"
       ttl     = 3600
-      records = ["203.0.113.10"]
+      rdata   = ["203.0.113.10"]
     },
     {
       subname = "www"
       type    = "A"
       ttl     = 3600
-      records = ["203.0.113.10"]
+      rdata   = ["203.0.113.10"]
     },
     {
       subname = ""
       type    = "MX"
       ttl     = 3600
-      records = ["10 mail.example.com."]
+      rdata   = ["10 mail.example.com."]
     },
   ]
 }
 
 output "managed_zonefile" {
-  description = "The canonical zone file computed from the structured records."
+  description = "The canonical zone file computed from the structured RRsets."
   value       = desec_records.bulk_example.zonefile
 }

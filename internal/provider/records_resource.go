@@ -46,7 +46,7 @@ var recordsRRsetObjectType = types.ObjectType{
 		"subname": subnameStringType{},
 		"type":    types.StringType,
 		"ttl":     types.Int64Type,
-		"records": types.SetType{ElemType: types.StringType},
+		"rdata":   types.SetType{ElemType: types.StringType},
 	},
 }
 
@@ -62,14 +62,14 @@ type recordsResourceModel struct {
 	Domain    types.String `tfsdk:"domain"`
 	Exclusive types.Bool   `tfsdk:"exclusive"`
 	Zonefile  types.String `tfsdk:"zonefile"`
-	Records   types.Set    `tfsdk:"records"`
+	RRsets    types.Set    `tfsdk:"rrsets"`
 }
 
 type recordsRRsetModel struct {
 	Subname subnameStringValue `tfsdk:"subname"`
 	Type    types.String       `tfsdk:"type"`
 	TTL     types.Int64        `tfsdk:"ttl"`
-	Records types.Set          `tfsdk:"records"`
+	RData   types.Set          `tfsdk:"rdata"`
 }
 
 func (r *recordsResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -78,18 +78,18 @@ func (r *recordsResource) Metadata(_ context.Context, req resource.MetadataReque
 
 func (r *recordsResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Manages a set of deSEC DNS records via the bulk RRset API.\n\n" +
-			"Records can be specified in one of two ways (mutually exclusive):\n\n" +
-			"- **Mode A (`zonefile`)**: Provide a BIND-format zone file string. The `records` attribute is computed.\n" +
-			"- **Mode B (`records`)**: Provide a structured set of RRset objects. The `zonefile` attribute is computed.\n\n" +
-			"This resource **co-exists** with `desec_record` resources. Only the RRsets explicitly declared " +
-			"are owned and managed; other records in the domain are not touched.\n\n" +
+		MarkdownDescription: "Manages a set of deSEC DNS RRsets via the bulk RRset API.\n\n" +
+			"RRsets can be specified in one of two ways (mutually exclusive):\n\n" +
+			"- **Mode A (`zonefile`)**: Provide a BIND-format zone file string. The `rrsets` attribute is computed.\n" +
+			"- **Mode B (`rrsets`)**: Provide a structured set of RRset objects. The `zonefile` attribute is computed.\n\n" +
+			"This resource **co-exists** with `desec_rrset` resources. Only the RRsets explicitly declared " +
+			"are owned and managed; other RRsets in the domain are not touched.\n\n" +
 			"The following record types are silently ignored because they are managed automatically by deSEC: " +
 			"`SOA`, `RRSIG`, `NSEC`, `NSEC3`, `NSEC3PARAM`, `CDNSKEY`, `CDS`, and apex `NS` records.",
 
 		Attributes: map[string]schema.Attribute{
 			"domain": schema.StringAttribute{
-				MarkdownDescription: "The domain name to manage records for. Changing this forces a new resource.",
+				MarkdownDescription: "The domain name to manage RRsets for. Changing this forces a new resource.",
 				Required:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
@@ -107,18 +107,18 @@ func (r *recordsResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 			},
 			"zonefile": schema.StringAttribute{
 				MarkdownDescription: "Zone file content in RFC 1035 / BIND format.\n\n" +
-					"Mutually exclusive with `records`. When set, the `records` attribute is computed from the " +
-					"parsed zone file. When `records` is set instead, this attribute is computed as a canonical " +
-					"reconstruction of the live records.\n\n" +
+					"Mutually exclusive with `rrsets`. When set, the `rrsets` attribute is computed from the " +
+					"parsed zone file. When `rrsets` is set instead, this attribute is computed as a canonical " +
+					"reconstruction of the live RRsets.\n\n" +
 					"Format and ordering differences (comments, whitespace, record ordering) are suppressed: " +
-					"a plan will only show a diff when the set of records or their values actually change.",
+					"a plan will only show a diff when the set of RRsets or their values actually change.",
 				Optional: true,
 				Computed: true,
 				PlanModifiers: []planmodifier.String{
 					recordsZonefileModifier{},
 				},
 			},
-			"records": schema.SetNestedAttribute{
+			"rrsets": schema.SetNestedAttribute{
 				MarkdownDescription: "Structured set of RRset objects.\n\n" +
 					"Mutually exclusive with `zonefile`. When set, the `zonefile` attribute is computed. " +
 					"When `zonefile` is set instead, this attribute is computed from the parsed zone file.\n\n" +
@@ -149,8 +149,8 @@ func (r *recordsResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 								int64validator.AtLeast(1),
 							},
 						},
-						"records": schema.SetAttribute{
-							MarkdownDescription: "Record values in presentation format (RDATA only).",
+						"rdata": schema.SetAttribute{
+							MarkdownDescription: "RDATA values in presentation format.",
 							Required:            true,
 							ElementType:         types.StringType,
 						},
@@ -169,13 +169,13 @@ func (r *recordsResource) ValidateConfig(ctx context.Context, req resource.Valid
 	}
 
 	zonefileSet := !data.Zonefile.IsNull() && !data.Zonefile.IsUnknown()
-	recordsSet := !data.Records.IsNull() && !data.Records.IsUnknown()
+	recordsSet := !data.RRsets.IsNull() && !data.RRsets.IsUnknown()
 
 	if zonefileSet && recordsSet {
 		resp.Diagnostics.AddAttributeError(
 			path.Root("zonefile"),
 			"Conflicting Configuration",
-			"Only one of \"zonefile\" or \"records\" may be specified, not both.",
+			"Only one of \"zonefile\" or \"rrsets\" may be specified, not both.",
 		)
 		return
 	}
@@ -183,14 +183,14 @@ func (r *recordsResource) ValidateConfig(ctx context.Context, req resource.Valid
 	if !zonefileSet && !recordsSet {
 		resp.Diagnostics.AddError(
 			"Missing Configuration",
-			"Exactly one of \"zonefile\" or \"records\" must be specified.",
+			"Exactly one of \"zonefile\" or \"rrsets\" must be specified.",
 		)
 		return
 	}
 
 	if recordsSet {
 		var models []recordsRRsetModel
-		diags := data.Records.ElementsAs(ctx, &models, false)
+		diags := data.RRsets.ElementsAs(ctx, &models, false)
 		resp.Diagnostics.Append(diags...)
 		if resp.Diagnostics.HasError() {
 			return
@@ -209,7 +209,7 @@ func (r *recordsResource) ValidateConfig(ctx context.Context, req resource.Valid
 			k := rrKey{subname, m.Type.ValueString()}
 			if seen[k] {
 				resp.Diagnostics.AddAttributeError(
-					path.Root("records"),
+					path.Root("rrsets"),
 					"Duplicate RRset",
 					fmt.Sprintf("Multiple entries with subname %q and type %q. Each (subname, type) pair must be unique.", m.Subname.ValueString(), m.Type.ValueString()),
 				)
@@ -257,8 +257,8 @@ func (r *recordsResource) Create(ctx context.Context, req resource.CreateRequest
 	if data.Exclusive.ValueBool() {
 		allRRsets, err := r.client.ListRRsets(ctx, domain, api.ListRRsetsOptions{})
 		if err != nil && !api.IsNotFound(err) {
-			resp.Diagnostics.AddError("Error Listing Records",
-				fmt.Sprintf("Unable to list records for domain %q: %s", domain, err))
+			resp.Diagnostics.AddError("Error Listing RRsets",
+				fmt.Sprintf("Unable to list RRsets for domain %q: %s", domain, err))
 			return
 		}
 		entries = append(entries, deletionEntriesForExtras(allRRsets, rrsets)...)
@@ -268,8 +268,8 @@ func (r *recordsResource) Create(ctx context.Context, req resource.CreateRequest
 
 	returned, err := r.client.BulkPutRRsets(ctx, domain, entries)
 	if err != nil {
-		resp.Diagnostics.AddError("Error Creating Records",
-			fmt.Sprintf("Unable to create records for domain %q: %s", domain, err))
+		resp.Diagnostics.AddError("Error Creating RRsets",
+			fmt.Sprintf("Unable to create RRsets for domain %q: %s", domain, err))
 		return
 	}
 
@@ -293,14 +293,14 @@ func (r *recordsResource) Read(ctx context.Context, req resource.ReadRequest, re
 			resp.State.RemoveResource(ctx)
 			return
 		}
-		resp.Diagnostics.AddError("Error Reading Records",
-			fmt.Sprintf("Unable to list records for domain %q: %s", domain, err))
+		resp.Diagnostics.AddError("Error Reading RRsets",
+			fmt.Sprintf("Unable to list RRsets for domain %q: %s", domain, err))
 		return
 	}
 
 	var managed []api.RRset
 
-	importCase := data.Records.IsNull() || data.Records.IsUnknown() || len(data.Records.Elements()) == 0
+	importCase := data.RRsets.IsNull() || data.RRsets.IsUnknown() || len(data.RRsets.Elements()) == 0
 	if importCase || data.Exclusive.ValueBool() {
 		for _, rs := range allRRsets {
 			rrtype := dns.StringToType[rs.Type]
@@ -313,7 +313,7 @@ func (r *recordsResource) Read(ctx context.Context, req resource.ReadRequest, re
 			managed = append(managed, rs)
 		}
 	} else {
-		stateRRsets, diags := recordsSetToAPIRRsets(ctx, data.Records)
+		stateRRsets, diags := recordsSetToAPIRRsets(ctx, data.RRsets)
 		resp.Diagnostics.Append(diags...)
 		if resp.Diagnostics.HasError() {
 			return
@@ -338,7 +338,7 @@ func (r *recordsResource) Read(ctx context.Context, req resource.ReadRequest, re
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	data.Records = recordsSet
+	data.RRsets = recordsSet
 	data.Zonefile = types.StringValue(rrsetToZonefile(domain, managed))
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -365,7 +365,7 @@ func (r *recordsResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 
-	oldRRsets, diags := recordsSetToAPIRRsets(ctx, state.Records)
+	oldRRsets, diags := recordsSetToAPIRRsets(ctx, state.RRsets)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -392,8 +392,8 @@ func (r *recordsResource) Update(ctx context.Context, req resource.UpdateRequest
 	if plan.Exclusive.ValueBool() {
 		allRRsets, err := r.client.ListRRsets(ctx, domain, api.ListRRsetsOptions{})
 		if err != nil && !api.IsNotFound(err) {
-			resp.Diagnostics.AddError("Error Listing Records",
-				fmt.Sprintf("Unable to list records for domain %q: %s", domain, err))
+			resp.Diagnostics.AddError("Error Listing RRsets",
+				fmt.Sprintf("Unable to list RRsets for domain %q: %s", domain, err))
 			return
 		}
 		entries = append(entries, deletionEntriesForExtras(allRRsets, newRRsets)...)
@@ -403,8 +403,8 @@ func (r *recordsResource) Update(ctx context.Context, req resource.UpdateRequest
 
 	returned, err := r.client.BulkPutRRsets(ctx, domain, entries)
 	if err != nil {
-		resp.Diagnostics.AddError("Error Updating Records",
-			fmt.Sprintf("Unable to update records for domain %q: %s", domain, err))
+		resp.Diagnostics.AddError("Error Updating RRsets",
+			fmt.Sprintf("Unable to update RRsets for domain %q: %s", domain, err))
 		return
 	}
 
@@ -420,7 +420,7 @@ func (r *recordsResource) Delete(ctx context.Context, req resource.DeleteRequest
 		return
 	}
 
-	stateRRsets, diags := recordsSetToAPIRRsets(ctx, data.Records)
+	stateRRsets, diags := recordsSetToAPIRRsets(ctx, data.RRsets)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -444,8 +444,8 @@ func (r *recordsResource) Delete(ctx context.Context, req resource.DeleteRequest
 		if api.IsNotFound(err) {
 			return
 		}
-		resp.Diagnostics.AddError("Error Deleting Records",
-			fmt.Sprintf("Unable to delete records for domain %q: %s", data.Domain.ValueString(), err))
+		resp.Diagnostics.AddError("Error Deleting RRsets",
+			fmt.Sprintf("Unable to delete RRsets for domain %q: %s", data.Domain.ValueString(), err))
 	}
 }
 
@@ -466,12 +466,12 @@ func (r *recordsResource) resolveRRsets(ctx context.Context, data recordsResourc
 		return rrsets, nil
 	}
 
-	if !data.Records.IsNull() && !data.Records.IsUnknown() {
-		return recordsSetToAPIRRsets(ctx, data.Records)
+	if !data.RRsets.IsNull() && !data.RRsets.IsUnknown() {
+		return recordsSetToAPIRRsets(ctx, data.RRsets)
 	}
 
 	var diags diag.Diagnostics
-	diags.AddError("Missing Configuration", "Either \"zonefile\" or \"records\" must be specified.")
+	diags.AddError("Missing Configuration", "Either \"zonefile\" or \"rrsets\" must be specified.")
 	return nil, diags
 }
 
@@ -484,9 +484,9 @@ func (r *recordsResource) setStateAfterWrite(ctx context.Context, data *recordsR
 	isZonefileMode := !data.Zonefile.IsNull() && !data.Zonefile.IsUnknown() && data.Zonefile.ValueString() != ""
 
 	if isZonefileMode {
-		data.Records = recordsSet
+		data.RRsets = recordsSet
 	} else {
-		data.Records = recordsSet
+		data.RRsets = recordsSet
 		data.Zonefile = types.StringValue(rrsetToZonefile(domain, returned))
 	}
 
@@ -707,7 +707,7 @@ func apiRRsetsToSet(ctx context.Context, rrsets []api.RRset) (types.Set, diag.Di
 			"subname": subnameStringValue{StringValue: types.StringValue(rs.Subname)},
 			"type":    types.StringValue(rs.Type),
 			"ttl":     types.Int64Value(int64(rs.TTL)),
-			"records": recsSet,
+			"rdata":   recsSet,
 		})
 		if diags.HasError() {
 			return types.SetNull(recordsRRsetObjectType), diags
@@ -728,7 +728,7 @@ func recordsSetToAPIRRsets(ctx context.Context, set types.Set) ([]api.RRset, dia
 	rrsets := make([]api.RRset, len(models))
 	for i, m := range models {
 		var recs []string
-		diags = m.Records.ElementsAs(ctx, &recs, false)
+		diags = m.RData.ElementsAs(ctx, &recs, false)
 		if diags.HasError() {
 			return nil, diags
 		}
@@ -767,11 +767,11 @@ func (recordsZonefileModifier) PlanModifyString(ctx context.Context, req planmod
 	if diags := req.State.Get(ctx, &stateData); diags.HasError() {
 		return
 	}
-	if stateData.Records.IsNull() || stateData.Records.IsUnknown() {
+	if stateData.RRsets.IsNull() || stateData.RRsets.IsUnknown() {
 		return
 	}
 
-	stateRRsets, diags := recordsSetToAPIRRsets(ctx, stateData.Records)
+	stateRRsets, diags := recordsSetToAPIRRsets(ctx, stateData.RRsets)
 	if diags.HasError() {
 		return
 	}
@@ -798,11 +798,11 @@ func (recordsZonefileModifier) PlanModifyString(ctx context.Context, req planmod
 	if diags := req.Plan.Get(ctx, &planData); diags.HasError() {
 		return
 	}
-	if planData.Records.IsNull() || planData.Records.IsUnknown() {
+	if planData.RRsets.IsNull() || planData.RRsets.IsUnknown() {
 		return
 	}
 
-	newRRsets, diags := recordsSetToAPIRRsets(ctx, planData.Records)
+	newRRsets, diags := recordsSetToAPIRRsets(ctx, planData.RRsets)
 	if diags.HasError() {
 		return
 	}
@@ -815,7 +815,7 @@ func (recordsZonefileModifier) PlanModifyString(ctx context.Context, req planmod
 type recordsSetModifier struct{}
 
 func (recordsSetModifier) Description(_ context.Context) string {
-	return "Handles semantic equality for the records attribute across both input and computed modes."
+	return "Handles semantic equality for the rrsets attribute across both input and computed modes."
 }
 
 func (m recordsSetModifier) MarkdownDescription(ctx context.Context) string {
@@ -835,14 +835,14 @@ func (recordsSetModifier) PlanModifySet(ctx context.Context, req planmodifier.Se
 	if diags := req.State.Get(ctx, &stateData); diags.HasError() {
 		return
 	}
-	if stateData.Records.IsNull() || stateData.Records.IsUnknown() {
+	if stateData.RRsets.IsNull() || stateData.RRsets.IsUnknown() {
 		return
 	}
 	if stateData.Domain.IsNull() || stateData.Domain.IsUnknown() {
 		return
 	}
 
-	stateRRsets, diags := recordsSetToAPIRRsets(ctx, stateData.Records)
+	stateRRsets, diags := recordsSetToAPIRRsets(ctx, stateData.RRsets)
 	if diags.HasError() {
 		return
 	}

@@ -8,11 +8,11 @@ description: |-
   Guides
   Getting Started guides/01-getting-started — register a domain, access nameservers and DNSSEC material, and create DNS records.Migrating to TF with Bulk Import and Config Bootstrapping guides/02-migrating-with-bulk-import — discover existing resources and generate configuration to bring them under TF management.Auditing with List Resources guides/03-auditing-with-list-resources — enumerate domains, records, tokens, and policies in your deSEC account.
   Data Sources
-  Read-only access is available for all of the above through matching data sources (desec_domain, desec_domains, desec_record, desec_records, desec_token, desec_tokens, desec_token_policy, desec_token_policies), plus a desec_zonefile data source that exports a full RFC 1035 zone file.
+  Read-only access is available for all of the above through matching data sources (desec_domain, desec_domains, desec_rrset, desec_rrsets, desec_token, desec_tokens, desec_token_policy, desec_token_policies), plus a desec_zonefile data source that exports a full RFC 1035 zone file.
   Ephemeral Resources
   ephemeral "desec_token" creates a short-lived token for use within a single Terraform/OpenTofu run. By default the token is deleted on close; set keep_on_close = true to retain it after the run completes.
   List Resources
-  desec_domain, desec_record, desec_token, and desec_token_policy are also available as list resources for bulk import and enumeration workflows.
+  desec_domain, desec_rrset, desec_token, and desec_token_policy are also available as list resources for bulk import and enumeration workflows.
   Functions
   provider::desec::to_punycode() and provider::desec::from_punycode() convert domain names between unicode (human-readable) and Punycode https://en.wikipedia.org/wiki/Punycode (ACE) form. The deSEC API only accepts domain names in Punycode form, so these functions are useful when working with Internationalized Domain Names (IDN) containing non-ASCII characters such as umlauts.
   provider::desec::parse_dnskey() and provider::desec::parse_ds() parse DNSSEC key material strings (as returned in the keys attribute of a domain) into their constituent fields per RFC 4034 https://datatracker.ietf.org/doc/html/rfc4034. This is useful for extracting individual fields such as the algorithm number, key tag, or digest to pass to a parent-zone registrar or another provider.
@@ -40,7 +40,7 @@ Use this provider to declaratively manage:
 
 ### Data Sources
 
-Read-only access is available for all of the above through matching data sources (`desec_domain`, `desec_domains`, `desec_record`, `desec_records`, `desec_token`, `desec_tokens`, `desec_token_policy`, `desec_token_policies`), plus a `desec_zonefile` data source that exports a full RFC 1035 zone file.
+Read-only access is available for all of the above through matching data sources (`desec_domain`, `desec_domains`, `desec_rrset`, `desec_rrsets`, `desec_token`, `desec_tokens`, `desec_token_policy`, `desec_token_policies`), plus a `desec_zonefile` data source that exports a full RFC 1035 zone file.
 
 ### Ephemeral Resources
 
@@ -48,7 +48,7 @@ Read-only access is available for all of the above through matching data sources
 
 ### List Resources
 
-`desec_domain`, `desec_record`, `desec_token`, and `desec_token_policy` are also available as list resources for bulk import and enumeration workflows.
+`desec_domain`, `desec_rrset`, `desec_token`, and `desec_token_policy` are also available as list resources for bulk import and enumeration workflows.
 
 ### Functions
 
@@ -76,7 +76,7 @@ resource "desec_domain" "example" {
   name = "example.com"
 }
 
-data "desec_record" "nameservers" {
+data "desec_rrset" "nameservers" {
   domain  = desec_domain.example.name
   subname = "@"
   type    = "NS"
@@ -84,7 +84,7 @@ data "desec_record" "nameservers" {
 
 output "nameservers" {
   description = "The deSEC nameservers to enter at your domain registrar."
-  value       = data.desec_record.nameservers.records
+  value       = data.desec_rrset.nameservers.rdata
 }
 
 # DNSSEC: once the domain is delegated to deSEC nameservers, retrieve the
@@ -107,7 +107,7 @@ output "dnssec_dnskeys" {
 #
 # The bootstrap provider creates the domain and all token scoping policies.
 # Once the scoped token and its policies are in place, the lazily-initialized
-# provider uses that token to manage DNS records for the domain.
+# provider uses that token to manage DNS RRsets for the domain.
 provider "desec" {
   alias     = "bootstrap"
   api_token = "your-desec-api-token"
@@ -146,12 +146,12 @@ resource "desec_token_policy" "lazy_token_domain" {
   depends_on = [desec_token_policy.lazy_token_default, desec_domain.example]
 }
 
-# The lazy provider manages records on the domain, proving it initialized correctly.
-resource "desec_record" "example_a" {
+# The lazy provider manages RRsets on the domain, proving it initialized correctly.
+resource "desec_rrset" "example_a" {
   domain  = desec_domain.example.name
   subname = "@"
   type    = "A"
-  records = ["203.0.113.1"]
+  rdata   = ["203.0.113.1"]
   ttl     = 3600
 
   depends_on = [desec_token_policy.lazy_token_domain]
@@ -170,10 +170,10 @@ output "idn_domain_unicode" {
   value       = provider::desec::from_punycode(desec_domain.idn_example.name)
 }
 
-# Bulk DNS record management: use desec_records to manage multiple RRsets at
-# once, either via a zone file or structured records. With exclusive = true,
-# any records on the domain not declared here are deleted — ensuring no
-# unmanaged records exist.
+# Bulk DNS RRset management: use desec_records to manage multiple RRsets at
+# once, either via a zone file or structured RRsets. With exclusive = true,
+# any RRsets on the domain not declared here are deleted — ensuring no
+# unmanaged RRsets exist.
 resource "desec_domain" "bulk_example" {
   name = "bulk.example.dedyn.io"
 }
@@ -182,30 +182,30 @@ resource "desec_records" "bulk_example" {
   domain    = desec_domain.bulk_example.name
   exclusive = true
 
-  records = [
+  rrsets = [
     {
       subname = ""
       type    = "A"
       ttl     = 3600
-      records = ["203.0.113.10"]
+      rdata   = ["203.0.113.10"]
     },
     {
       subname = "www"
       type    = "A"
       ttl     = 3600
-      records = ["203.0.113.10"]
+      rdata   = ["203.0.113.10"]
     },
     {
       subname = ""
       type    = "MX"
       ttl     = 3600
-      records = ["10 mail.example.com."]
+      rdata   = ["10 mail.example.com."]
     },
   ]
 }
 
 output "managed_zonefile" {
-  description = "The canonical zone file computed from the structured records."
+  description = "The canonical zone file computed from the structured RRsets."
   value       = desec_records.bulk_example.zonefile
 }
 ```

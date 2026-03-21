@@ -13,7 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 )
 
-func TestAccRecordsDataSource(t *testing.T) {
+func TestAccRRsetsDataSource(t *testing.T) {
 	domainName := testAccDomainName(t, "recs-ds-acc")
 	providerConfig, factories := newTestAccEnv(t)
 
@@ -22,11 +22,11 @@ func TestAccRecordsDataSource(t *testing.T) {
 		ProtoV6ProviderFactories: factories,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccRecordsDataSourceConfig(providerConfig, domainName),
+				Config: testAccRRsetsDataSourceConfig(providerConfig, domainName),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue(
-						"data.desec_records.all",
-						tfjsonpath.New("records"),
+						"data.desec_rrsets.all",
+						tfjsonpath.New("rrsets"),
 						knownvalue.ListSizeExact(2),
 					),
 				},
@@ -35,7 +35,7 @@ func TestAccRecordsDataSource(t *testing.T) {
 	})
 }
 
-func TestAccRecordsDataSourceFilter(t *testing.T) {
+func TestAccRRsetsDataSourceFilter(t *testing.T) {
 	domainName := testAccDomainName(t, "recs-filter-acc")
 	providerConfig, factories := newTestAccEnv(t)
 
@@ -44,16 +44,16 @@ func TestAccRecordsDataSourceFilter(t *testing.T) {
 		ProtoV6ProviderFactories: factories,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccRecordsDataSourceFilterConfig(providerConfig, domainName),
+				Config: testAccRRsetsDataSourceFilterConfig(providerConfig, domainName),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue(
-						"data.desec_records.filtered",
-						tfjsonpath.New("records"),
+						"data.desec_rrsets.filtered",
+						tfjsonpath.New("rrsets"),
 						knownvalue.ListSizeExact(1),
 					),
 					statecheck.ExpectKnownValue(
-						"data.desec_records.filtered",
-						tfjsonpath.New("records").AtSliceIndex(0).AtMapKey("type"),
+						"data.desec_rrsets.filtered",
+						tfjsonpath.New("rrsets").AtSliceIndex(0).AtMapKey("type"),
 						knownvalue.StringExact("A"),
 					),
 				},
@@ -62,7 +62,7 @@ func TestAccRecordsDataSourceFilter(t *testing.T) {
 	})
 }
 
-func testAccRecordsDataSourceConfig(providerConfig, domainName string) string {
+func testAccRRsetsDataSourceConfig(providerConfig, domainName string) string {
 	return fmt.Sprintf(`
 %s
 
@@ -70,31 +70,31 @@ resource "desec_domain" "test" {
   name = %q
 }
 
-resource "desec_record" "a" {
+resource "desec_rrset" "a" {
   domain  = desec_domain.test.name
   subname = "www"
   type    = "A"
   ttl     = 3600
-  records = ["1.2.3.4"]
+  rdata   = ["1.2.3.4"]
 }
 
-resource "desec_record" "aaaa" {
+resource "desec_rrset" "aaaa" {
   domain  = desec_domain.test.name
   subname = "www"
   type    = "AAAA"
   ttl     = 3600
-  records = ["::1"]
+  rdata   = ["::1"]
 }
 
-data "desec_records" "all" {
+data "desec_rrsets" "all" {
   domain     = desec_domain.test.name
   subname    = "www"
-  depends_on = [desec_record.a, desec_record.aaaa]
+  depends_on = [desec_rrset.a, desec_rrset.aaaa]
 }
 `, providerConfig, domainName)
 }
 
-func testAccRecordsDataSourceFilterConfig(providerConfig, domainName string) string {
+func testAccRRsetsDataSourceFilterConfig(providerConfig, domainName string) string {
 	return fmt.Sprintf(`
 %s
 
@@ -102,27 +102,27 @@ resource "desec_domain" "test" {
   name = %q
 }
 
-resource "desec_record" "a" {
+resource "desec_rrset" "a" {
   domain  = desec_domain.test.name
   subname = "www"
   type    = "A"
   ttl     = 3600
-  records = ["1.2.3.4"]
+  rdata   = ["1.2.3.4"]
 }
 
-resource "desec_record" "aaaa" {
+resource "desec_rrset" "aaaa" {
   domain  = desec_domain.test.name
   subname = "www"
   type    = "AAAA"
   ttl     = 3600
-  records = ["::1"]
+  rdata   = ["::1"]
 }
 
-data "desec_records" "filtered" {
+data "desec_rrsets" "filtered" {
   domain     = desec_domain.test.name
   subname    = "www"
   type       = "A"
-  depends_on = [desec_record.a, desec_record.aaaa]
+  depends_on = [desec_rrset.a, desec_rrset.aaaa]
 }
 `, providerConfig, domainName)
 }

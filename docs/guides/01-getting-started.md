@@ -58,11 +58,11 @@ resource "desec_domain" "idn" {
 
 ### Nameservers
 
-Look up the NS records assigned by deSEC using the `desec_record` data source. You will need to enter
+Look up the NS records assigned by deSEC using the `desec_rrset` data source. You will need to enter
 these at your domain registrar to delegate the domain to deSEC.
 
 ```terraform
-data "desec_record" "nameservers" {
+data "desec_rrset" "nameservers" {
   domain  = desec_domain.example.name
   subname = "@"
   type    = "NS"
@@ -70,7 +70,7 @@ data "desec_record" "nameservers" {
 
 output "nameservers" {
   description = "Enter these nameservers at your domain registrar."
-  value       = data.desec_record.nameservers.records
+  value       = data.desec_rrset.nameservers.rdata
 }
 ```
 
@@ -94,43 +94,43 @@ output "dnssec_dnskeys" {
 
 ## Step 3: Create DNS Records
 
-Use the `desec_record` resource to create individual DNS record sets. Each resource manages
+Use the `desec_rrset` resource to create individual DNS record sets. Each resource manages
 one RRset (a combination of domain, subname, and type).
 
 ```terraform
-resource "desec_record" "www_a" {
+resource "desec_rrset" "www_a" {
   domain  = desec_domain.example.name
   subname = "www"
   type    = "A"
   ttl     = 3600
-  records = ["203.0.113.10"]
+  rdata   = ["203.0.113.10"]
 }
 
-resource "desec_record" "mx" {
+resource "desec_rrset" "mx" {
   domain  = desec_domain.example.name
   subname = "@"
   type    = "MX"
   ttl     = 3600
-  records = ["10 mail.example.com."]
+  rdata   = ["10 mail.example.com."]
 }
 
-resource "desec_record" "spf" {
+resource "desec_rrset" "spf" {
   domain  = desec_domain.example.name
   subname = "@"
   type    = "TXT"
   ttl     = 3600
-  records = ["\"v=spf1 mx ~all\""]
+  rdata   = ["\"v=spf1 mx ~all\""]
 }
 ```
 
--> **Tip:** Use `@` or `""` for `subname` to create records at the zone apex. The `records` field
+-> **Tip:** Use `@` or `""` for `subname` to create records at the zone apex. The `rdata` field
 is a set of strings — multiple values create a multi-value RRset (e.g. round-robin A records).
 
 ## Step 4: Bulk Record Management
 
 For domains with many records, the [`desec_records`](../resources/records) resource is a better
-fit than individual `desec_record` resources. It sends all record changes in a single bulk API
-request, which avoids deSEC rate limits that can occur when managing many `desec_record` resources
+fit than individual `desec_rrset` resources. It sends all record changes in a single bulk API
+request, which avoids deSEC rate limits that can occur when managing many `desec_rrset` resources
 in parallel.
 
 `desec_records` also accepts a BIND-style zone file, making it easy to migrate existing DNS
@@ -163,7 +163,7 @@ resource "desec_records" "bulk" {
 }
 ```
 
--> **Note:** `desec_records` can also use structured `records` blocks instead of a zone file.
+-> **Note:** `desec_records` can also use structured `rrsets` blocks instead of a zone file.
 See the [`desec_records` resource documentation](../resources/records) for details.
 
 ## Complete Example
@@ -186,7 +186,7 @@ resource "desec_domain" "example" {
 }
 
 # Step 2: Retrieve the nameservers assigned by deSEC
-data "desec_record" "nameservers" {
+data "desec_rrset" "nameservers" {
   domain  = desec_domain.example.name
   subname = "@"
   type    = "NS"
@@ -194,7 +194,7 @@ data "desec_record" "nameservers" {
 
 output "nameservers" {
   description = "Enter these nameservers at your domain registrar."
-  value       = data.desec_record.nameservers.records
+  value       = data.desec_rrset.nameservers.rdata
 }
 
 # Step 2b: Retrieve DNSSEC DS records for your registrar
@@ -208,32 +208,32 @@ output "dnssec_dnskeys" {
   value       = [for key in desec_domain.example.keys : key.dnskey if key.managed]
 }
 
-# Step 3: Create individual DNS records
-resource "desec_record" "www_a" {
+# Step 3: Create individual DNS RRsets
+resource "desec_rrset" "www_a" {
   domain  = desec_domain.example.name
   subname = "www"
   type    = "A"
   ttl     = 3600
-  records = ["203.0.113.10"]
+  rdata   = ["203.0.113.10"]
 }
 
-resource "desec_record" "mx" {
+resource "desec_rrset" "mx" {
   domain  = desec_domain.example.name
   subname = "@"
   type    = "MX"
   ttl     = 3600
-  records = ["10 mail.example.com."]
+  rdata   = ["10 mail.example.com."]
 }
 
-resource "desec_record" "spf" {
+resource "desec_rrset" "spf" {
   domain  = desec_domain.example.name
   subname = "@"
   type    = "TXT"
   ttl     = 3600
-  records = ["\"v=spf1 mx ~all\""]
+  rdata   = ["\"v=spf1 mx ~all\""]
 }
 
-# Step 4: Bulk record management with desec_records
+# Step 4: Bulk RRset management with desec_records
 resource "desec_domain" "bulk" {
   name = "bulk.example.com"
 }

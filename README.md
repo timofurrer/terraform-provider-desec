@@ -33,15 +33,15 @@ resource "desec_domain" "example" {
   name = "example.com"
 }
 
-resource "desec_record" "www" {
+resource "desec_rrset" "www" {
   domain  = desec_domain.example.name
   subname = "www"
   type    = "A"
   ttl     = 3600
-  records = ["1.2.3.4"]
+  rdata   = ["1.2.3.4"]
 }
 
-data "desec_record" "nameservers" {
+data "desec_rrset" "nameservers" {
   domain  = desec_domain.example.name
   subname = "@"
   type    = "NS"
@@ -49,7 +49,7 @@ data "desec_record" "nameservers" {
 
 output "nameservers" {
   description = "The deSEC nameservers to enter at your domain registrar."
-  value       = data.desec_record.nameservers.records
+  value       = data.desec_rrset.nameservers.rdata
 }
 ```
 

@@ -14,49 +14,45 @@ import (
 	"github.com/timofurrer/terraform-provider-desec/internal/api"
 )
 
-// Ensure RecordsDataSource satisfies the datasource interface.
-var _ datasource.DataSource = (*recordsDataSource)(nil)
+var _ datasource.DataSource = (*rrsetsDataSource)(nil)
 
-// newRecordsDataSource creates a new RecordsDataSource.
-func newRecordsDataSource() datasource.DataSource {
-	return &recordsDataSource{}
+func newRRsetsDataSource() datasource.DataSource {
+	return &rrsetsDataSource{}
 }
 
-// recordsDataSource lists all RRsets within a deSEC domain.
-type recordsDataSource struct {
+type rrsetsDataSource struct {
 	client *api.Client
 }
 
-// recordsDataSourceModel describes the data source data model.
-type recordsDataSourceModel struct {
+type rrsetsDataSourceModel struct {
 	Domain  types.String `tfsdk:"domain"`
 	Subname types.String `tfsdk:"subname"`
 	Type    types.String `tfsdk:"type"`
-	Records types.List   `tfsdk:"records"`
+	RRsets  types.List   `tfsdk:"rrsets"`
 }
 
-func (d *recordsDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_records"
+func (d *rrsetsDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_rrsets"
 }
 
-func (d *recordsDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+func (d *rrsetsDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Retrieves the list of DNS Resource Record Sets (RRsets) within a deSEC domain, with optional filtering by subname or type.",
 
 		Attributes: map[string]schema.Attribute{
 			"domain": schema.StringAttribute{
-				MarkdownDescription: "The domain name to list records for.",
+				MarkdownDescription: "The domain name to list RRsets for.",
 				Required:            true,
 			},
 			"subname": schema.StringAttribute{
-				MarkdownDescription: "Filter records by this subname. Leave unset to return records for all subnames.",
+				MarkdownDescription: "Filter RRsets by this subname. Leave unset to return RRsets for all subnames.",
 				Optional:            true,
 			},
 			"type": schema.StringAttribute{
-				MarkdownDescription: "Filter records by this record type (e.g. `A`, `AAAA`, `TXT`). Leave unset to return all types.",
+				MarkdownDescription: "Filter RRsets by this record type (e.g. `A`, `AAAA`, `TXT`). Leave unset to return all types.",
 				Optional:            true,
 			},
-			"records": schema.ListNestedAttribute{
+			"rrsets": schema.ListNestedAttribute{
 				MarkdownDescription: "List of RRsets matching the filter criteria.",
 				Computed:            true,
 				NestedObject: schema.NestedAttributeObject{
@@ -81,8 +77,8 @@ func (d *recordsDataSource) Schema(_ context.Context, _ datasource.SchemaRequest
 							MarkdownDescription: "The TTL in seconds.",
 							Computed:            true,
 						},
-						"records": schema.SetAttribute{
-							MarkdownDescription: "The set of record content strings.",
+						"rdata": schema.SetAttribute{
+							MarkdownDescription: "The set of RDATA strings.",
 							Computed:            true,
 							ElementType:         types.StringType,
 						},
@@ -101,7 +97,7 @@ func (d *recordsDataSource) Schema(_ context.Context, _ datasource.SchemaRequest
 	}
 }
 
-func (d *recordsDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
+func (d *rrsetsDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
 	if req.ProviderData == nil {
 		return
 	}
@@ -116,8 +112,8 @@ func (d *recordsDataSource) Configure(_ context.Context, req datasource.Configur
 	d.client = client
 }
 
-func (d *recordsDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
-	var data recordsDataSourceModel
+func (d *rrsetsDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
+	var data rrsetsDataSourceModel
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -130,19 +126,18 @@ func (d *recordsDataSource) Read(ctx context.Context, req datasource.ReadRequest
 
 	rrsets, err := d.client.ListRRsets(ctx, data.Domain.ValueString(), opts)
 	if err != nil {
-		resp.Diagnostics.AddError("Error Listing Records",
-			fmt.Sprintf("Unable to list records for domain %q: %s", data.Domain.ValueString(), err))
+		resp.Diagnostics.AddError("Error Listing RRsets",
+			fmt.Sprintf("Unable to list RRsets for domain %q: %s", data.Domain.ValueString(), err))
 		return
 	}
 
-	// Build the nested attribute types.
 	rrsetAttrTypes := map[string]attr.Type{
 		"domain":  types.StringType,
 		"subname": types.StringType,
 		"name":    types.StringType,
 		"type":    types.StringType,
 		"ttl":     types.Int64Type,
-		"records": types.SetType{ElemType: types.StringType},
+		"rdata":   types.SetType{ElemType: types.StringType},
 		"created": types.StringType,
 		"touched": types.StringType,
 	}
@@ -150,7 +145,7 @@ func (d *recordsDataSource) Read(ctx context.Context, req datasource.ReadRequest
 
 	rrsetObjs := make([]attr.Value, 0, len(rrsets))
 	for _, rs := range rrsets {
-		recordSet, setDiags := types.SetValueFrom(ctx, types.StringType, rs.Records)
+		rdataSet, setDiags := types.SetValueFrom(ctx, types.StringType, rs.Records)
 		resp.Diagnostics.Append(setDiags...)
 		if resp.Diagnostics.HasError() {
 			return
@@ -162,7 +157,7 @@ func (d *recordsDataSource) Read(ctx context.Context, req datasource.ReadRequest
 			"name":    types.StringValue(rs.Name),
 			"type":    types.StringValue(rs.Type),
 			"ttl":     types.Int64Value(int64(rs.TTL)),
-			"records": recordSet,
+			"rdata":   rdataSet,
 			"created": types.StringValue(rs.Created),
 			"touched": types.StringValue(rs.Touched),
 		})
@@ -178,7 +173,7 @@ func (d *recordsDataSource) Read(ctx context.Context, req datasource.ReadRequest
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	data.Records = rrsetsList
+	data.RRsets = rrsetsList
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }

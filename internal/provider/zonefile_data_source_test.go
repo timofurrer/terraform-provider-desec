@@ -48,17 +48,17 @@ resource "desec_domain" "test" {
   name = %q
 }
 
-resource "desec_record" "test" {
+resource "desec_rrset" "test" {
   domain = desec_domain.test.name
   subname = "www"
   type    = "A"
   ttl     = 3600
-  records = ["1.2.3.4"]
+  rdata = ["1.2.3.4"]
 }
 
 data "desec_zonefile" "test" {
   name = desec_domain.test.name
-  depends_on = [desec_record.test]
+  depends_on = [desec_rrset.test]
 }
 `, providerConfig, name)
 }

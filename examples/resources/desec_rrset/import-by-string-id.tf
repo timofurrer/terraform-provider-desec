@@ -1,4 +1,4 @@
 import {
-  to = desec_record.www_a
+  to = desec_rrset.www_a
   id = "example.com/@/A"
 }

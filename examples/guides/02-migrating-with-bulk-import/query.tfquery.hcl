@@ -3,8 +3,8 @@ list "desec_domain" "all" {
   provider = desec
 }
 
-# Discover all DNS records for a domain
-list "desec_record" "all" {
+# Discover all DNS RRsets for a domain
+list "desec_rrset" "all" {
   provider = desec
   config {
     domain = "example.com"

@@ -1,5 +1,5 @@
 import {
-  to = desec_record.www_a
+  to = desec_rrset.www_a
   identity = {
     domain  = "example.com"
     subname = "www"

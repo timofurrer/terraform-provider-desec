@@ -15,41 +15,37 @@ import (
 	"github.com/timofurrer/terraform-provider-desec/internal/api"
 )
 
-// Ensure recordListResource fully satisfies framework interfaces.
-var _ list.ListResource = (*recordListResource)(nil)
-var _ list.ListResourceWithConfigure = (*recordListResource)(nil)
+var _ list.ListResource = (*rrsetListResource)(nil)
+var _ list.ListResourceWithConfigure = (*rrsetListResource)(nil)
 
-// newRecordListResource creates a new recordListResource.
-func newRecordListResource() list.ListResource {
-	return &recordListResource{}
+func newRRsetListResource() list.ListResource {
+	return &rrsetListResource{}
 }
 
-// recordListResource lists deSEC RRsets within a domain.
-type recordListResource struct {
+type rrsetListResource struct {
 	client *api.Client
 }
 
-// recordListConfigModel describes the filter configuration for listing records.
-type recordListConfigModel struct {
+type rrsetListConfigModel struct {
 	Domain  types.String `tfsdk:"domain"`
 	Subname types.String `tfsdk:"subname"`
 	Type    types.String `tfsdk:"type"`
 }
 
-func (r *recordListResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_record"
+func (r *rrsetListResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_rrset"
 }
 
-func (r *recordListResource) ListResourceConfigSchema(_ context.Context, _ list.ListResourceSchemaRequest, resp *list.ListResourceSchemaResponse) {
+func (r *rrsetListResource) ListResourceConfigSchema(_ context.Context, _ list.ListResourceSchemaRequest, resp *list.ListResourceSchemaResponse) {
 	resp.Schema = listschema.Schema{
 		MarkdownDescription: "Lists deSEC DNS resource record sets (RRsets) within a domain.",
 		Attributes: map[string]listschema.Attribute{
 			"domain": listschema.StringAttribute{
-				MarkdownDescription: "The domain name to list records for.",
+				MarkdownDescription: "The domain name to list RRsets for.",
 				Required:            true,
 			},
 			"subname": listschema.StringAttribute{
-				MarkdownDescription: "Filter by subdomain part of the record name.",
+				MarkdownDescription: "Filter by subdomain part of the RRset name.",
 				Optional:            true,
 			},
 			"type": listschema.StringAttribute{
@@ -60,7 +56,7 @@ func (r *recordListResource) ListResourceConfigSchema(_ context.Context, _ list.
 	}
 }
 
-func (r *recordListResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+func (r *rrsetListResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	if req.ProviderData == nil {
 		return
 	}
@@ -75,8 +71,8 @@ func (r *recordListResource) Configure(_ context.Context, req resource.Configure
 	r.client = client
 }
 
-func (r *recordListResource) List(ctx context.Context, req list.ListRequest, stream *list.ListResultsStream) {
-	var config recordListConfigModel
+func (r *rrsetListResource) List(ctx context.Context, req list.ListRequest, stream *list.ListResultsStream) {
+	var config rrsetListConfigModel
 	stream.Results = list.NoListResults
 
 	if diags := req.Config.Get(ctx, &config); diags.HasError() {
@@ -92,8 +88,8 @@ func (r *recordListResource) List(ctx context.Context, req list.ListRequest, str
 	rrsets, err := r.client.ListRRsets(ctx, config.Domain.ValueString(), opts)
 	if err != nil {
 		stream.Results = list.ListResultsStreamDiagnostics(diag.Diagnostics{
-			diag.NewErrorDiagnostic("Error Listing Records",
-				fmt.Sprintf("Unable to list records for domain %q: %s", config.Domain.ValueString(), err)),
+			diag.NewErrorDiagnostic("Error Listing RRsets",
+				fmt.Sprintf("Unable to list RRsets for domain %q: %s", config.Domain.ValueString(), err)),
 		})
 		return
 	}
@@ -102,7 +98,7 @@ func (r *recordListResource) List(ctx context.Context, req list.ListRequest, str
 		for _, rrset := range rrsets {
 			result := req.NewListResult(ctx)
 
-			var model recordResourceModel
+			var model rrsetResourceModel
 			if diags := rrsetToModel(ctx, &rrset, &model); diags.HasError() {
 				result.Diagnostics.Append(diags...)
 				push(result)
@@ -111,7 +107,7 @@ func (r *recordListResource) List(ctx context.Context, req list.ListRequest, str
 
 			result.DisplayName = model.Domain.ValueString() + "/" + model.Subname.ValueString() + "/" + model.Type.ValueString()
 
-			if diags := result.Identity.Set(ctx, recordIdentityModel{
+			if diags := result.Identity.Set(ctx, rrsetIdentityModel{
 				Domain:  model.Domain,
 				Subname: types.StringValue(model.Subname.ValueString()),
 				Type:    model.Type,

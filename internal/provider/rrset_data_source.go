@@ -13,36 +13,32 @@ import (
 	"github.com/timofurrer/terraform-provider-desec/internal/api"
 )
 
-// Ensure RecordDataSource satisfies the datasource interface.
-var _ datasource.DataSource = (*recordDataSource)(nil)
+var _ datasource.DataSource = (*rrsetDataSource)(nil)
 
-// newRecordDataSource creates a new RecordDataSource.
-func newRecordDataSource() datasource.DataSource {
-	return &recordDataSource{}
+func newRRsetDataSource() datasource.DataSource {
+	return &rrsetDataSource{}
 }
 
-// recordDataSource reads a single deSEC RRset.
-type recordDataSource struct {
+type rrsetDataSource struct {
 	client *api.Client
 }
 
-// recordDataSourceModel describes the data source data model.
-type recordDataSourceModel struct {
+type rrsetDataSourceModel struct {
 	Domain  types.String `tfsdk:"domain"`
 	Subname types.String `tfsdk:"subname"`
 	Type    types.String `tfsdk:"type"`
 	TTL     types.Int64  `tfsdk:"ttl"`
-	Records types.Set    `tfsdk:"records"`
+	RData   types.Set    `tfsdk:"rdata"`
 	Name    types.String `tfsdk:"name"`
 	Created types.String `tfsdk:"created"`
 	Touched types.String `tfsdk:"touched"`
 }
 
-func (d *recordDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_record"
+func (d *rrsetDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_rrset"
 }
 
-func (d *recordDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+func (d *rrsetDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Retrieves a specific DNS Resource Record Set (RRset) from a deSEC domain.",
 
@@ -52,7 +48,7 @@ func (d *recordDataSource) Schema(_ context.Context, _ datasource.SchemaRequest,
 				Required:            true,
 			},
 			"subname": schema.StringAttribute{
-				MarkdownDescription: "The subdomain part of the record name. Use `@` for the zone apex.",
+				MarkdownDescription: "The subdomain part of the RRset name. Use `@` for the zone apex.",
 				Required:            true,
 			},
 			"type": schema.StringAttribute{
@@ -63,8 +59,8 @@ func (d *recordDataSource) Schema(_ context.Context, _ datasource.SchemaRequest,
 				MarkdownDescription: "The TTL (time-to-live) in seconds.",
 				Computed:            true,
 			},
-			"records": schema.SetAttribute{
-				MarkdownDescription: "The set of record content strings.",
+			"rdata": schema.SetAttribute{
+				MarkdownDescription: "The set of RDATA strings.",
 				Computed:            true,
 				ElementType:         types.StringType,
 			},
@@ -84,7 +80,7 @@ func (d *recordDataSource) Schema(_ context.Context, _ datasource.SchemaRequest,
 	}
 }
 
-func (d *recordDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
+func (d *rrsetDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
 	if req.ProviderData == nil {
 		return
 	}
@@ -99,8 +95,8 @@ func (d *recordDataSource) Configure(_ context.Context, req datasource.Configure
 	d.client = client
 }
 
-func (d *recordDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
-	var data recordDataSourceModel
+func (d *rrsetDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
+	var data rrsetDataSourceModel
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -112,8 +108,8 @@ func (d *recordDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		data.Type.ValueString(),
 	)
 	if err != nil {
-		resp.Diagnostics.AddError("Error Reading Record",
-			fmt.Sprintf("Unable to read record %s/%s/%s: %s",
+		resp.Diagnostics.AddError("Error Reading RRset",
+			fmt.Sprintf("Unable to read RRset %s/%s/%s: %s",
 				data.Domain.ValueString(), data.Subname.ValueString(), data.Type.ValueString(), err))
 		return
 	}
@@ -131,7 +127,7 @@ func (d *recordDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	data.Records = setVal
+	data.RData = setVal
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
