@@ -3,10 +3,10 @@ locals {
   dane = provider::desec::openpgpkey_dane("hugh@example.com", file("hugh.gpg.base64"))
 }
 
-resource "desec_record" "openpgpkey" {
+resource "desec_rrset" "openpgpkey" {
   domain  = local.dane.domain
   subname = local.dane.subname
   type    = local.dane.type
   ttl     = 3600
-  records = [local.dane.rdata]
+  rdata   = [local.dane.rdata]
 }

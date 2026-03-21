@@ -3,12 +3,12 @@
 page_title: "openpgpkey_dane function - desec"
 subcategory: ""
 description: |-
-  Compute the DNS record subname and RDATA for an OPENPGPKEY DANE record.
+  Compute the DNS RRset subname and RDATA for an OPENPGPKEY DANE record.
 ---
 
 # function: openpgpkey_dane
 
-Computes the DNS record `subname` and `rdata` for publishing an OpenPGP public key via DNS using the OPENPGPKEY resource record (TYPE 61) as defined in [RFC 7929](https://datatracker.ietf.org/doc/html/rfc7929).
+Computes the DNS RRset `subname` and `rdata` for publishing an OpenPGP public key via DNS using the OPENPGPKEY resource record (TYPE 61) as defined in [RFC 7929](https://datatracker.ietf.org/doc/html/rfc7929).
 
 Given an email address, the DNS owner name is constructed by:
 
@@ -16,9 +16,9 @@ Given an email address, the DNS owner name is constructed by:
 2. Computing the **SHA-256 hash** and **truncating** to 28 octets (224 bits).
 3. **Hex-encoding** the truncated hash (56 characters).
 
-The resulting `subname` is `<56-char-hex>._openpgpkey`, ready to use with a `desec_record` resource.
+The resulting `subname` is `<56-char-hex>._openpgpkey`, ready to use with a `desec_rrset` resource.
 
-The `rdata` is the validated base64-encoded OpenPGP Transferable Public Key, suitable for the `records` attribute of a `desec_record` resource with `type = "OPENPGPKEY"`.
+The `rdata` is the validated base64-encoded OpenPGP Transferable Public Key, suitable for the `rdata` attribute of a `desec_rrset` resource with `type = "OPENPGPKEY"`.
 
 The function also returns the `domain` extracted from the email address.
 
@@ -37,12 +37,12 @@ locals {
   dane = provider::desec::openpgpkey_dane("hugh@example.com", file("hugh.gpg.base64"))
 }
 
-resource "desec_record" "openpgpkey" {
+resource "desec_rrset" "openpgpkey" {
   domain  = local.dane.domain
   subname = local.dane.subname
   type    = local.dane.type
   ttl     = 3600
-  records = [local.dane.rdata]
+  rdata   = [local.dane.rdata]
 }
 ```
 

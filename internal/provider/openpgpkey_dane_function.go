@@ -36,17 +36,17 @@ func (f *openpgpkeyDANEFunction) Metadata(_ context.Context, _ function.Metadata
 
 func (f *openpgpkeyDANEFunction) Definition(_ context.Context, _ function.DefinitionRequest, resp *function.DefinitionResponse) {
 	resp.Definition = function.Definition{
-		Summary: "Compute the DNS record subname and RDATA for an OPENPGPKEY DANE record.",
-		MarkdownDescription: "Computes the DNS record `subname` and `rdata` for publishing an OpenPGP public key " +
+		Summary: "Compute the DNS RRset subname and RDATA for an OPENPGPKEY DANE record.",
+		MarkdownDescription: "Computes the DNS RRset `subname` and `rdata` for publishing an OpenPGP public key " +
 			"via DNS using the OPENPGPKEY resource record (TYPE 61) as defined in " +
 			"[RFC 7929](https://datatracker.ietf.org/doc/html/rfc7929).\n\n" +
 			"Given an email address, the DNS owner name is constructed by:\n\n" +
 			"1. Taking the **local-part** (left of `@`) and converting it to **lowercase**.\n" +
 			"2. Computing the **SHA-256 hash** and **truncating** to 28 octets (224 bits).\n" +
 			"3. **Hex-encoding** the truncated hash (56 characters).\n\n" +
-			"The resulting `subname` is `<56-char-hex>._openpgpkey`, ready to use with a `desec_record` resource.\n\n" +
+			"The resulting `subname` is `<56-char-hex>._openpgpkey`, ready to use with a `desec_rrset` resource.\n\n" +
 			"The `rdata` is the validated base64-encoded OpenPGP Transferable Public Key, suitable for the " +
-			"`records` attribute of a `desec_record` resource with `type = \"OPENPGPKEY\"`.\n\n" +
+			"`rdata` attribute of a `desec_rrset` resource with `type = \"OPENPGPKEY\"`.\n\n" +
 			"The function also returns the `domain` extracted from the email address.\n\n" +
 			"The function returns an object with the following attributes:\n\n" +
 			"- `domain` (String) — The domain part of the email address (right of `@`).\n" +
