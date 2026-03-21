@@ -1,3 +1,13 @@
+## 0.6.0 (2026-03-21)
+
+### BREAKING CHANGES (1 change)
+
+- Rename `*_record` to `*_rrset`
+
+### IMPROVEMENTS (1 change)
+
+- Add `openpgpkey_dane` function to support `OPENPGPKEY` record type
+
 ## 0.5.0 (2026-03-17)
 
 ### IMPROVEMENTS (1 change)
