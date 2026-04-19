@@ -5,6 +5,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
@@ -40,6 +41,17 @@ var autoManagedRRTypes = map[uint16]bool{
 	dns.TypeCDNSKEY:    true,
 	dns.TypeCDS:        true,
 }
+
+// rrKey uniquely identifies an RRset within a domain.
+type rrKey struct{ subname, rrtype string }
+
+// managedRRsetKey is the JSON-serialisable form of rrKey stored in private state.
+type managedRRsetKey struct {
+	Subname string `json:"subname"`
+	Type    string `json:"type"`
+}
+
+const managedRRsetKeysPrivateStateKey = "managed_rrset_keys"
 
 var recordsRRsetObjectType = types.ObjectType{
 	AttrTypes: map[string]attr.Type{
@@ -275,6 +287,9 @@ func (r *recordsResource) Create(ctx context.Context, req resource.CreateRequest
 
 	sortRRsets(returned)
 	resp.Diagnostics.Append(r.setStateAfterWrite(ctx, &data, domain, returned)...)
+	if !data.Exclusive.ValueBool() {
+		resp.Diagnostics.Append(storeManagedRRsetKeys(ctx, resp.Private, rrsets)...)
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -313,21 +328,14 @@ func (r *recordsResource) Read(ctx context.Context, req resource.ReadRequest, re
 			managed = append(managed, rs)
 		}
 	} else {
-		stateRRsets, diags := recordsSetToAPIRRsets(ctx, data.RRsets)
-		resp.Diagnostics.Append(diags...)
+		// exclusive=false: only include records this resource actively manages.
+		// Prefer the managed-key list from private state, which is written on every
+		// Create/Update and precisely reflects the declared configuration. Fall back
+		// to the state RRsets for legacy states that pre-date private state (e.g.
+		// resources created by an older provider version or via import).
+		managed = appendManagedFromPrivateOrState(ctx, req.Private, allRRsets, data.RRsets, &resp.Diagnostics)
 		if resp.Diagnostics.HasError() {
 			return
-		}
-
-		type rrKey struct{ subname, rrtype string }
-		owned := make(map[rrKey]bool, len(stateRRsets))
-		for _, rs := range stateRRsets {
-			owned[rrKey{rs.Subname, rs.Type}] = true
-		}
-		for _, rs := range allRRsets {
-			if owned[rrKey{rs.Subname, rs.Type}] {
-				managed = append(managed, rs)
-			}
 		}
 	}
 
@@ -371,22 +379,49 @@ func (r *recordsResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 
-	type rrKey struct{ subname, rrtype string }
 	newSet := make(map[rrKey]bool, len(newRRsets))
 	for _, rs := range newRRsets {
 		newSet[rrKey{rs.Subname, rs.Type}] = true
 	}
 
 	entries := rrsetsToPutEntries(newRRsets)
-	for _, rs := range oldRRsets {
-		if !newSet[rrKey{rs.Subname, rs.Type}] {
-			entries = append(entries, api.BulkPutRRsetEntry{
-				Subname: rs.Subname,
-				Type:    rs.Type,
-				TTL:     rs.TTL,
-				Records: []string{},
-			})
+	if plan.Exclusive.ValueBool() {
+		// exclusive=true: delete any old-state record not in the new config.
+		for _, rs := range oldRRsets {
+			if !newSet[rrKey{rs.Subname, rs.Type}] {
+				entries = append(entries, api.BulkPutRRsetEntry{
+					Subname: rs.Subname,
+					Type:    rs.Type,
+					TTL:     rs.TTL,
+					Records: []string{},
+				})
+			}
 		}
+	} else {
+		// exclusive=false: only delete records that were previously declared in
+		// this resource's configuration (tracked via private state). Records that
+		// exist in the zone but were never declared are left untouched.
+		prevKeys, hasPrevKeys, diags := loadManagedRRsetKeys(ctx, req.Private)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		if hasPrevKeys {
+			for _, rs := range oldRRsets {
+				k := rrKey{rs.Subname, rs.Type}
+				if prevKeys[k] && !newSet[k] {
+					entries = append(entries, api.BulkPutRRsetEntry{
+						Subname: rs.Subname,
+						Type:    rs.Type,
+						TTL:     rs.TTL,
+						Records: []string{},
+					})
+				}
+			}
+		}
+		// If no previous private state (migration from legacy state or first run
+		// after an import), we conservatively skip deletions so that untracked
+		// records are never removed from the zone.
 	}
 
 	if plan.Exclusive.ValueBool() {
@@ -410,6 +445,9 @@ func (r *recordsResource) Update(ctx context.Context, req resource.UpdateRequest
 
 	sortRRsets(returned)
 	resp.Diagnostics.Append(r.setStateAfterWrite(ctx, &plan, domain, returned)...)
+	if !plan.Exclusive.ValueBool() {
+		resp.Diagnostics.Append(storeManagedRRsetKeys(ctx, resp.Private, newRRsets)...)
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -495,6 +533,93 @@ func (r *recordsResource) setStateAfterWrite(ctx context.Context, data *recordsR
 
 func isApexNS(subname, rrtype string) bool {
 	return subname == "" && rrtype == "NS"
+}
+
+// storeManagedRRsetKeys persists the (subname, type) pairs of the given rrsets
+// in Terraform private state so they can be used by Read and Update to determine
+// which records this resource actively manages when exclusive=false.
+func storeManagedRRsetKeys(ctx context.Context, private interface {
+	SetKey(context.Context, string, []byte) diag.Diagnostics
+}, rrsets []api.RRset) diag.Diagnostics {
+	keys := make([]managedRRsetKey, len(rrsets))
+	for i, rs := range rrsets {
+		keys[i] = managedRRsetKey{Subname: rs.Subname, Type: rs.Type}
+	}
+	data, err := json.Marshal(keys)
+	if err != nil {
+		var d diag.Diagnostics
+		d.AddError("Error Encoding Private State",
+			fmt.Sprintf("Unable to encode managed rrset keys: %s", err))
+		return d
+	}
+	return private.SetKey(ctx, managedRRsetKeysPrivateStateKey, data)
+}
+
+// loadManagedRRsetKeys reads the managed key set from Terraform private state.
+// Returns (keys, true, nil) when private state exists, (nil, false, nil) when
+// it does not yet exist (e.g. legacy state or after import).
+func loadManagedRRsetKeys(ctx context.Context, private interface {
+	GetKey(context.Context, string) ([]byte, diag.Diagnostics)
+}) (map[rrKey]bool, bool, diag.Diagnostics) {
+	data, diags := private.GetKey(ctx, managedRRsetKeysPrivateStateKey)
+	if diags.HasError() || len(data) == 0 {
+		return nil, false, diags
+	}
+	var keys []managedRRsetKey
+	if err := json.Unmarshal(data, &keys); err != nil {
+		var d diag.Diagnostics
+		d.AddError("Error Decoding Private State",
+			fmt.Sprintf("Unable to decode managed rrset keys: %s", err))
+		return nil, false, d
+	}
+	m := make(map[rrKey]bool, len(keys))
+	for _, k := range keys {
+		m[rrKey{k.Subname, k.Type}] = true
+	}
+	return m, true, nil
+}
+
+// appendManagedFromPrivateOrState returns the subset of allRRsets that this
+// resource manages when exclusive=false. It uses private state when available
+// (set after every Create/Update); for legacy state without private state it
+// falls back to using the state RRsets as the owned set.
+func appendManagedFromPrivateOrState(
+	ctx context.Context,
+	private interface {
+		GetKey(context.Context, string) ([]byte, diag.Diagnostics)
+	},
+	allRRsets []api.RRset,
+	stateRRsetsVal types.Set,
+	diags *diag.Diagnostics,
+) []api.RRset {
+	managedKeys, hasManagedKeys, d := loadManagedRRsetKeys(ctx, private)
+	diags.Append(d...)
+	if diags.HasError() {
+		return nil
+	}
+
+	var owned map[rrKey]bool
+	if hasManagedKeys {
+		owned = managedKeys
+	} else {
+		stateRRsets, d2 := recordsSetToAPIRRsets(ctx, stateRRsetsVal)
+		diags.Append(d2...)
+		if diags.HasError() {
+			return nil
+		}
+		owned = make(map[rrKey]bool, len(stateRRsets))
+		for _, rs := range stateRRsets {
+			owned[rrKey{rs.Subname, rs.Type}] = true
+		}
+	}
+
+	var managed []api.RRset
+	for _, rs := range allRRsets {
+		if owned[rrKey{rs.Subname, rs.Type}] {
+			managed = append(managed, rs)
+		}
+	}
+	return managed
 }
 
 func parseZonefile(zonefile, domain string) ([]api.RRset, error) {
@@ -648,7 +773,6 @@ func rrsetsToPutEntries(rrsets []api.RRset) []api.BulkPutRRsetEntry {
 }
 
 func deletionEntriesForExtras(allRRsets []api.RRset, configured []api.RRset) []api.BulkPutRRsetEntry {
-	type rrKey struct{ subname, rrtype string }
 	wanted := make(map[rrKey]bool, len(configured))
 	for _, rs := range configured {
 		wanted[rrKey{rs.Subname, rs.Type}] = true
@@ -677,7 +801,6 @@ func deletionEntriesForExtras(allRRsets []api.RRset, configured []api.RRset) []a
 }
 
 func deduplicateEntries(entries []api.BulkPutRRsetEntry) []api.BulkPutRRsetEntry {
-	type rrKey struct{ subname, rrtype string }
 	seen := make(map[rrKey]bool, len(entries))
 	deduped := make([]api.BulkPutRRsetEntry, 0, len(entries))
 	for _, e := range entries {
