@@ -11,7 +11,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 	"github.com/timofurrer/terraform-provider-desec/internal/api"
 )
@@ -284,10 +286,13 @@ func TestAccRecordsResource_import(t *testing.T) {
 				Config: testAccRecordsImportSetup(providerConfig, domainName),
 			},
 			{
-				ResourceName:            "desec_records.imported",
-				ImportState:             true,
-				ImportStateId:           domainName,
-				ImportStateVerifyIgnore: []string{"zonefile"},
+				ResourceName:  "desec_records.imported",
+				ImportState:   true,
+				ImportStateId: domainName,
+				// After fix: Read no longer pulls all server records into state
+				// on import when exclusive=false.  Both rrsets (now empty) and
+				// zonefile (always computed) differ from the reference config.
+				ImportStateVerifyIgnore: []string{"zonefile", "rrsets"},
 			},
 			{
 				PreConfig: func() {
@@ -1172,6 +1177,297 @@ func TestAccRecordsResource_coexistWithRecord(t *testing.T) {
 					statecheck.ExpectKnownValue("desec_rrset.mail",
 						tfjsonpath.New("subname"), knownvalue.StringExact("mail")),
 				},
+			},
+		},
+	})
+}
+
+// ---- Issue #8: exclusive=false must not delete unmanaged records ----
+
+// TestAccRecordsResource_nonExclusivePreservesDroppedRecord verifies that
+// removing an RRset from the desec_records config with exclusive=false does
+// NOT delete that RRset from the server.  The record is simply "unmanaged"
+// going forward.
+//
+// This test currently FAILS because Update always emits a deletion entry for
+// every RRset that is present in state but absent from the new config, even
+// when exclusive=false.
+//
+// Plan-check annotations:
+//   - PreApply/SetSizeExact(1): verifies the plan's rrsets.After reflects the
+//     configured subset (www only).  When a ModifyPlan fix is added that keeps
+//     unmanaged records visible in the plan, change this to SetSizeExact(2) so
+//     the plan shows both www and mail with no removals.
+func TestAccRecordsResource_nonExclusivePreservesDroppedRecord(t *testing.T) {
+	domainName := testAccDomainName(t, "rec-nx-drop")
+	providerConfig, factories, client := newTestAccEnvWithClient(t)
+
+	configBoth := fmt.Sprintf(`
+%s
+
+resource "desec_domain" "test" {
+  name = %q
+}
+
+resource "desec_records" "test" {
+  domain    = desec_domain.test.name
+  exclusive = false
+
+  rrsets = [
+    {
+      subname = "www"
+      type    = "A"
+      ttl     = 3600
+      rdata   = ["1.2.3.4"]
+    },
+    {
+      subname = "mail"
+      type    = "A"
+      ttl     = 3600
+      rdata   = ["2.3.4.5"]
+    },
+  ]
+
+  depends_on = [desec_domain.test]
+}
+`, providerConfig, domainName)
+
+	// Second config: only "www" remains; "mail" is no longer declared.
+	// With exclusive=false, "mail" must survive on the server.
+	configWwwOnly := fmt.Sprintf(`
+%s
+
+resource "desec_domain" "test" {
+  name = %q
+}
+
+resource "desec_records" "test" {
+  domain    = desec_domain.test.name
+  exclusive = false
+
+  rrsets = [
+    {
+      subname = "www"
+      type    = "A"
+      ttl     = 3600
+      rdata   = ["1.2.3.4"]
+    },
+  ]
+
+  depends_on = [desec_domain.test]
+}
+`, providerConfig, domainName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			// Step 1: Create both records.
+			{
+				Config: configBoth,
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("desec_records.test",
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(2)),
+				},
+			},
+			// Step 2: Drop "mail" from config.  Verify that the plan is an
+			// in-place update and that "mail" A is NOT deleted from the server.
+			//
+			// Pre-fix: plan shows "-mail" removal and apply deletes mail from
+			// server → server-side Check fails.
+			//
+			// Post-fix (Update only): apply preserves mail on server; state
+			// shrinks to 1.  The plan still displays "-mail" (misleading display)
+			// but apply is safe.
+			//
+			// Post-fix (Update + ModifyPlan): plan.After.rrsets contains both
+			// www and mail (size 2), so no removal is displayed at all.  Update
+			// SetSizeExact below to 2 once ModifyPlan is implemented.
+			{
+				Config: configWwwOnly,
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction(
+							"desec_records.test",
+							plancheck.ResourceActionUpdate,
+						),
+						// Currently: plan.After.rrsets = [www] (size 1).
+						// After ModifyPlan fix: change to SetSizeExact(2) — plan
+						// preserves both www and mail in .After, showing no removal.
+						plancheck.ExpectKnownValue(
+							"desec_records.test",
+							tfjsonpath.New("rrsets"),
+							knownvalue.SetSizeExact(1),
+						),
+					},
+				},
+				// Server-side assertion: mail A must still exist.
+				Check: func(_ *terraform.State) error {
+					rs, err := client.GetRRset(t.Context(), domainName, "mail", "A")
+					if err != nil {
+						return fmt.Errorf("mail A should still exist on server after dropping it from config (exclusive=false): %w", err)
+					}
+					if rs == nil {
+						return fmt.Errorf("mail A was unexpectedly deleted from the server")
+					}
+					return nil
+				},
+				// State: only www is managed now.
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("desec_records.test",
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(1)),
+				},
+			},
+			// Step 3: Idempotency — second plan must be empty.
+			{
+				Config:             configWwwOnly,
+				PlanOnly:           true,
+				ExpectNonEmptyPlan: false,
+			},
+		},
+	})
+}
+
+// TestAccRecordsResource_nonExclusivePreservesUnmanagedAfterImport verifies
+// that importing a desec_records resource (which populates state with ALL
+// existing RRsets) and then applying a subset config with exclusive=false does
+// NOT delete the RRsets that are absent from the config.
+//
+// This reproduces the exact scenario from GitHub issue #8, where the user had
+// DynDNS-managed records ("home A" and "ogd A") that ended up in state via
+// legacy behaviour and were subsequently planned for deletion despite
+// exclusive=false.
+//
+// This test currently FAILS because:
+//  1. Import pulls every RRset in the zone into state (including home and ogd).
+//  2. Update emits deletion entries for every state entry absent from config,
+//     unconditionally — even when exclusive=false.
+//
+// Plan-check annotations:
+//   - PreApply/SetSizeExact(1): verifies plan.After.rrsets = [www] (the
+//     configured subset).  When a ModifyPlan fix is added that also keeps
+//     externals (home, ogd) visible in the plan, change this to
+//     SetSizeExact(3) so no removal is displayed.
+func TestAccRecordsResource_nonExclusivePreservesUnmanagedAfterImport(t *testing.T) {
+	domainName := testAccDomainName(t, "rec-nx-import")
+	providerConfig, factories, client := newTestAccEnvWithClient(t)
+
+	// Config that declares only "www".  The external "home" and "ogd" records
+	// are created out-of-band (simulating DynDNS) and must survive the apply.
+	configWwwOnly := fmt.Sprintf(`
+%s
+
+resource "desec_domain" "test" {
+  name = %q
+}
+
+resource "desec_records" "test" {
+  domain    = desec_domain.test.name
+  exclusive = false
+
+  rrsets = [
+    {
+      subname = "www"
+      type    = "A"
+      ttl     = 3600
+      rdata   = ["1.2.3.4"]
+    },
+  ]
+
+  depends_on = [desec_domain.test]
+}
+`, providerConfig, domainName)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			// Step 1: Create the domain via Terraform only.  No desec_records yet.
+			{
+				Config: fmt.Sprintf(`
+%s
+
+resource "desec_domain" "test" {
+  name = %q
+}
+`, providerConfig, domainName),
+			},
+			// Step 2: Out-of-band create "home" and "ogd" records (simulating
+			// DynDNS), then import the desec_records resource.  The import
+			// Read pulls ALL existing RRsets into state, including the externals.
+			{
+				PreConfig: func() {
+					for _, rs := range []api.CreateRRsetOptions{
+						{Subname: "home", Type: "A", TTL: 3600, Records: []string{"1.2.3.4"}},
+						{Subname: "ogd", Type: "A", TTL: 3600, Records: []string{"4.5.6.7"}},
+					} {
+						if _, err := client.CreateRRset(t.Context(), domainName, rs); err != nil {
+							t.Fatalf("out-of-band create %s/%s: %v", rs.Subname, rs.Type, err)
+						}
+					}
+				},
+				Config:             configWwwOnly,
+				ResourceName:       "desec_records.test",
+				ImportState:        true,
+				ImportStateId:      domainName,
+				ImportStatePersist: true,
+				ImportStateVerify:  false,
+			},
+			// Step 3: Apply the subset config.  State (from import) has home+ogd;
+			// config has only www.  With exclusive=false, home and ogd must not
+			// be deleted from the server.
+			//
+			// Pre-fix: apply deletes home and ogd → server-side Check fails.
+			//
+			// Post-fix (Update only): apply preserves home+ogd; state becomes
+			// [www].  The plan still displays "-home -ogd +www" (misleading) but
+			// apply is safe.
+			//
+			// Post-fix (Update + ModifyPlan): plan.After.rrsets contains www,
+			// home, and ogd (size 3) — no removal is shown.  Update
+			// SetSizeExact below to 3 once ModifyPlan is implemented.
+			{
+				Config: configWwwOnly,
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction(
+							"desec_records.test",
+							plancheck.ResourceActionUpdate,
+						),
+						// Currently: plan.After.rrsets = [www] (size 1).
+						// After ModifyPlan fix: change to SetSizeExact(3) — plan
+						// keeps home and ogd visible, showing only "+www".
+						plancheck.ExpectKnownValue(
+							"desec_records.test",
+							tfjsonpath.New("rrsets"),
+							knownvalue.SetSizeExact(1),
+						),
+					},
+				},
+				// Server-side assertions: home and ogd must still exist.
+				Check: func(_ *terraform.State) error {
+					for _, sub := range []string{"home", "ogd"} {
+						rs, err := client.GetRRset(t.Context(), domainName, sub, "A")
+						if err != nil {
+							return fmt.Errorf("%s A should still exist on server (exclusive=false must not delete unmanaged records): %w", sub, err)
+						}
+						if rs == nil {
+							return fmt.Errorf("%s A was unexpectedly deleted from the server", sub)
+						}
+					}
+					return nil
+				},
+				// State: only www is managed; externals are not tracked.
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("desec_records.test",
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(1)),
+				},
+			},
+			// Step 4: Idempotency — second plan must be empty.
+			{
+				Config:             configWwwOnly,
+				PlanOnly:           true,
+				ExpectNonEmptyPlan: false,
 			},
 		},
 	})

@@ -300,8 +300,9 @@ func (r *recordsResource) Read(ctx context.Context, req resource.ReadRequest, re
 
 	var managed []api.RRset
 
-	importCase := data.RRsets.IsNull() || data.RRsets.IsUnknown() || len(data.RRsets.Elements()) == 0
-	if importCase || data.Exclusive.ValueBool() {
+	if data.Exclusive.ValueBool() {
+		// Exclusive mode: state mirrors every RRset in the zone (minus
+		// auto-managed types).  Any server-side drift is visible in the plan.
 		for _, rs := range allRRsets {
 			rrtype := dns.StringToType[rs.Type]
 			if autoManagedRRTypes[rrtype] {
@@ -312,7 +313,11 @@ func (r *recordsResource) Read(ctx context.Context, req resource.ReadRequest, re
 			}
 			managed = append(managed, rs)
 		}
-	} else {
+	} else if !data.RRsets.IsNull() && !data.RRsets.IsUnknown() {
+		// Non-exclusive mode: state tracks only records that Terraform
+		// explicitly manages (those already in state).  Unmanaged records —
+		// whether created out-of-band or inherited from an import — are
+		// invisible to state and are never planned for deletion.
 		stateRRsets, diags := recordsSetToAPIRRsets(ctx, data.RRsets)
 		resp.Diagnostics.Append(diags...)
 		if resp.Diagnostics.HasError() {
@@ -330,6 +335,9 @@ func (r *recordsResource) Read(ctx context.Context, req resource.ReadRequest, re
 			}
 		}
 	}
+	// else: state.RRsets is null/unknown (e.g. immediately after terraform
+	// import with exclusive=false).  Leave managed empty so state is
+	// initialised cleanly; the first apply populates it from config.
 
 	sortRRsets(managed)
 
@@ -365,29 +373,7 @@ func (r *recordsResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 
-	oldRRsets, diags := recordsSetToAPIRRsets(ctx, state.RRsets)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	type rrKey struct{ subname, rrtype string }
-	newSet := make(map[rrKey]bool, len(newRRsets))
-	for _, rs := range newRRsets {
-		newSet[rrKey{rs.Subname, rs.Type}] = true
-	}
-
 	entries := rrsetsToPutEntries(newRRsets)
-	for _, rs := range oldRRsets {
-		if !newSet[rrKey{rs.Subname, rs.Type}] {
-			entries = append(entries, api.BulkPutRRsetEntry{
-				Subname: rs.Subname,
-				Type:    rs.Type,
-				TTL:     rs.TTL,
-				Records: []string{},
-			})
-		}
-	}
 
 	if plan.Exclusive.ValueBool() {
 		allRRsets, err := r.client.ListRRsets(ctx, domain, api.ListRRsetsOptions{})

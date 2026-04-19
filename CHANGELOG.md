@@ -1,3 +1,10 @@
+## 0.6.1 (2026-04-15)
+
+### BUG FIXES (1 change)
+
+- `desec_records` with `exclusive = false` no longer deletes unmanaged RRsets dropped from
+  config or inherited via import
+
 ## 0.6.0 (2026-03-21)
 
 ### BREAKING CHANGES (1 change)
