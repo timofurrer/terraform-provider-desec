@@ -168,8 +168,12 @@ func (r *recordsResource) ValidateConfig(ctx context.Context, req resource.Valid
 		return
 	}
 
-	zonefileSet := !data.Zonefile.IsNull() && !data.Zonefile.IsUnknown()
-	recordsSet := !data.RRsets.IsNull() && !data.RRsets.IsUnknown()
+	if data.Zonefile.IsUnknown() || data.RRsets.IsUnknown() {
+		return
+	}
+
+	zonefileSet := !data.Zonefile.IsNull()
+	recordsSet := !data.RRsets.IsNull()
 
 	if zonefileSet && recordsSet {
 		resp.Diagnostics.AddAttributeError(
@@ -300,9 +304,8 @@ func (r *recordsResource) Read(ctx context.Context, req resource.ReadRequest, re
 
 	var managed []api.RRset
 
-	if data.Exclusive.ValueBool() {
-		// Exclusive mode: state mirrors every RRset in the zone (minus
-		// auto-managed types).  Any server-side drift is visible in the plan.
+	importCase := data.RRsets.IsNull() || data.RRsets.IsUnknown() || len(data.RRsets.Elements()) == 0
+	if importCase || data.Exclusive.ValueBool() {
 		for _, rs := range allRRsets {
 			rrtype := dns.StringToType[rs.Type]
 			if autoManagedRRTypes[rrtype] {
@@ -313,11 +316,7 @@ func (r *recordsResource) Read(ctx context.Context, req resource.ReadRequest, re
 			}
 			managed = append(managed, rs)
 		}
-	} else if !data.RRsets.IsNull() && !data.RRsets.IsUnknown() {
-		// Non-exclusive mode: state tracks only records that Terraform
-		// explicitly manages (those already in state).  Unmanaged records —
-		// whether created out-of-band or inherited from an import — are
-		// invisible to state and are never planned for deletion.
+	} else {
 		stateRRsets, diags := recordsSetToAPIRRsets(ctx, data.RRsets)
 		resp.Diagnostics.Append(diags...)
 		if resp.Diagnostics.HasError() {
@@ -335,9 +334,6 @@ func (r *recordsResource) Read(ctx context.Context, req resource.ReadRequest, re
 			}
 		}
 	}
-	// else: state.RRsets is null/unknown (e.g. immediately after terraform
-	// import with exclusive=false).  Leave managed empty so state is
-	// initialised cleanly; the first apply populates it from config.
 
 	sortRRsets(managed)
 

@@ -286,13 +286,10 @@ func TestAccRecordsResource_import(t *testing.T) {
 				Config: testAccRecordsImportSetup(providerConfig, domainName),
 			},
 			{
-				ResourceName:  "desec_records.imported",
-				ImportState:   true,
-				ImportStateId: domainName,
-				// After fix: Read no longer pulls all server records into state
-				// on import when exclusive=false.  Both rrsets (now empty) and
-				// zonefile (always computed) differ from the reference config.
-				ImportStateVerifyIgnore: []string{"zonefile", "rrsets"},
+				ResourceName:            "desec_records.imported",
+				ImportState:             true,
+				ImportStateId:           domainName,
+				ImportStateVerifyIgnore: []string{"zonefile"},
 			},
 			{
 				PreConfig: func() {
@@ -302,6 +299,60 @@ func TestAccRecordsResource_import(t *testing.T) {
 					}
 				},
 				Config: testAccRecordsImportSetup(providerConfig, domainName),
+			},
+		},
+	})
+}
+
+// TestAccRecordsResource_unknownRRsets verifies that ValidateConfig does not
+// fire "Exactly one of zonefile or rrsets must be specified" when rrsets is
+// unknown at plan time — e.g. when it comes from a for_each or a resource
+// attribute that hasn't been applied yet (issue #5).
+func TestAccRecordsResource_unknownRRsets(t *testing.T) {
+	domainName := testAccDomainName(t, "records-unknown")
+	providerConfig, factories := newTestAccEnv(t)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				// rrsets is driven by a local whose value is computed from
+				// desec_domain.test.name, which is unknown during planning
+				// until the domain resource has been created.  ValidateConfig
+				// must not reject this with "Exactly one of..." at plan time.
+				Config: fmt.Sprintf(`
+%s
+
+resource "desec_domain" "test" {
+  name = %q
+}
+
+locals {
+  # Build a single-element rrset list whose subname references the (initially
+  # unknown) domain name so that rrsets itself is unknown at plan time.
+  ptr_records = [
+    {
+      subname = "1"
+      type    = "PTR"
+      ttl     = 3600
+      rdata   = ["${desec_domain.test.name}."]
+    },
+  ]
+}
+
+resource "desec_records" "test" {
+  domain    = desec_domain.test.name
+  exclusive = false
+  rrsets    = local.ptr_records
+
+  depends_on = [desec_domain.test]
+}
+`, providerConfig, domainName),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("desec_records.test",
+						tfjsonpath.New("rrsets"), knownvalue.SetSizeExact(1)),
+				},
 			},
 		},
 	})
