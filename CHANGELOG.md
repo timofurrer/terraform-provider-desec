@@ -1,3 +1,9 @@
+## 0.6.2 (2026-04-20)
+
+### BUG FIXES (1 change)
+
+- `desec_records` fix import regression
+
 ## 0.6.1 (2026-04-15)
 
 ### BUG FIXES (1 change)
