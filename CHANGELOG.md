@@ -1,3 +1,9 @@
+## 0.6.3 (2026-07-06)
+
+### BUG FIXES (1 change)
+
+- Fix identity handling
+
 ## 0.6.2 (2026-04-20)
 
 ### BUG FIXES (1 change)
