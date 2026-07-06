@@ -257,6 +257,9 @@ func (r *domainResource) Read(ctx context.Context, req resource.ReadRequest, res
 	domain, err := r.client.GetDomain(ctx, data.Name.ValueString())
 	if err != nil {
 		if api.IsNotFound(err) {
+			resp.Diagnostics.Append(resp.Identity.Set(ctx, domainIdentityModel{
+				Name: data.Name,
+			})...)
 			resp.State.RemoveResource(ctx)
 			return
 		}

@@ -9,11 +9,15 @@ import (
 	"regexp"
 	"testing"
 
+	fwresource "github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 	"github.com/hashicorp/terraform-plugin-testing/tfversion"
+	"github.com/timofurrer/terraform-provider-desec/internal/api"
 )
 
 func TestAccRRsetResource(t *testing.T) {
@@ -706,4 +710,152 @@ resource "desec_rrset" "test" {
 			},
 		},
 	})
+}
+
+// TestRRsetResourceUpdate_SetsIdentity calls Update directly with a null
+// starting identity (as would be the case for state written before identity
+// support existed) and verifies the response identity is populated by the
+// resource itself, rather than relying on the framework to carry an existing
+// identity forward. Calling through terraform-plugin-testing wouldn't
+// exercise this: the framework pre-populates a response's identity from the
+// planned/prior identity before invoking the resource, so once some earlier
+// step (like Create) had set identity correctly, that carry-over would mask
+// Update not setting it.
+func TestRRsetResourceUpdate_SetsIdentity(t *testing.T) {
+	ctx := context.Background()
+	client := newIdentityTestClient(t)
+
+	const domainName = "update-identity-example.dedyn.io"
+	if _, err := client.CreateDomain(ctx, api.CreateDomainOptions{Name: domainName}); err != nil {
+		t.Fatalf("create domain: %v", err)
+	}
+	rrset, err := client.CreateRRset(ctx, domainName, api.CreateRRsetOptions{
+		Subname: "www",
+		Type:    "A",
+		TTL:     3600,
+		Records: []string{"1.2.3.4"},
+	})
+	if err != nil {
+		t.Fatalf("create rrset: %v", err)
+	}
+
+	var prior rrsetResourceModel
+	if diags := rrsetToModel(ctx, rrset, &prior); diags.HasError() {
+		t.Fatalf("build prior model: %v", diags)
+	}
+
+	res := newRRsetResource()
+	configureTestResource(t, ctx, res, client)
+	schema := resourceSchema(ctx, res)
+
+	updated := prior
+	rdata, diags := types.SetValueFrom(ctx, types.StringType, []string{"1.2.3.4", "5.6.7.8"})
+	if diags.HasError() {
+		t.Fatalf("build updated rdata: %v", diags)
+	}
+	updated.RData = rdata
+
+	plan := tfsdk.Plan{Schema: schema.Schema}
+	if diags := plan.Set(ctx, &updated); diags.HasError() {
+		t.Fatalf("build update plan: %v", diags)
+	}
+	state := tfsdk.State{Schema: schema.Schema}
+	if diags := state.Set(ctx, &prior); diags.HasError() {
+		t.Fatalf("build prior state: %v", diags)
+	}
+
+	updateReq := fwresource.UpdateRequest{
+		Plan:     plan,
+		State:    state,
+		Identity: nullResourceIdentity(t, ctx, res),
+	}
+	updateResp := fwresource.UpdateResponse{
+		State:    tfsdk.State{Schema: schema.Schema},
+		Identity: nullResourceIdentity(t, ctx, res),
+	}
+
+	res.Update(ctx, updateReq, &updateResp)
+
+	if updateResp.Diagnostics.HasError() {
+		t.Fatalf("Update returned diagnostics: %v", updateResp.Diagnostics)
+	}
+	requireNonNullIdentity(t, updateResp.Identity)
+
+	var gotIdentity rrsetIdentityModel
+	if diags := updateResp.Identity.Get(ctx, &gotIdentity); diags.HasError() {
+		t.Fatalf("read back identity: %v", diags)
+	}
+	if gotIdentity.Domain.ValueString() != domainName || gotIdentity.Subname.ValueString() != "www" || gotIdentity.Type.ValueString() != "A" {
+		t.Fatalf("unexpected identity: %+v", gotIdentity)
+	}
+}
+
+// TestRRsetResourceRead_NotFoundSetsIdentity calls Read directly, with a null
+// starting identity, for an rrset that has been deleted out-of-band, and
+// verifies that the not-found branch (which removes the resource from state)
+// also sets identity. Without this, a subsequent plan fails with "Missing
+// Resource Identity After Read" instead of proposing recreation.
+func TestRRsetResourceRead_NotFoundSetsIdentity(t *testing.T) {
+	ctx := context.Background()
+	client := newIdentityTestClient(t)
+
+	const domainName = "read-notfound-rrset-identity-example.dedyn.io"
+	if _, err := client.CreateDomain(ctx, api.CreateDomainOptions{Name: domainName}); err != nil {
+		t.Fatalf("create domain: %v", err)
+	}
+	rrset, err := client.CreateRRset(ctx, domainName, api.CreateRRsetOptions{
+		Subname: "www",
+		Type:    "A",
+		TTL:     3600,
+		Records: []string{"1.2.3.4"},
+	})
+	if err != nil {
+		t.Fatalf("create rrset: %v", err)
+	}
+
+	var prior rrsetResourceModel
+	if diags := rrsetToModel(ctx, rrset, &prior); diags.HasError() {
+		t.Fatalf("build prior model: %v", diags)
+	}
+
+	// Simulate an out-of-band deletion, e.g. via the deSEC web UI.
+	if err := client.DeleteRRset(ctx, domainName, "www", "A"); err != nil {
+		t.Fatalf("delete rrset out of band: %v", err)
+	}
+
+	res := newRRsetResource()
+	configureTestResource(t, ctx, res, client)
+	schema := resourceSchema(ctx, res)
+
+	state := tfsdk.State{Schema: schema.Schema}
+	if diags := state.Set(ctx, &prior); diags.HasError() {
+		t.Fatalf("build prior state: %v", diags)
+	}
+
+	readReq := fwresource.ReadRequest{
+		State:    state,
+		Identity: nullResourceIdentity(t, ctx, res),
+	}
+	readResp := fwresource.ReadResponse{
+		State:    tfsdk.State{Schema: schema.Schema},
+		Identity: nullResourceIdentity(t, ctx, res),
+	}
+
+	res.Read(ctx, readReq, &readResp)
+
+	if readResp.Diagnostics.HasError() {
+		t.Fatalf("Read returned diagnostics: %v", readResp.Diagnostics)
+	}
+	if !readResp.State.Raw.IsNull() {
+		t.Fatal("expected Read to remove the resource from state after out-of-band deletion")
+	}
+	requireNonNullIdentity(t, readResp.Identity)
+
+	var gotIdentity rrsetIdentityModel
+	if diags := readResp.Identity.Get(ctx, &gotIdentity); diags.HasError() {
+		t.Fatalf("read back identity: %v", diags)
+	}
+	if gotIdentity.Domain.ValueString() != domainName || gotIdentity.Subname.ValueString() != "www" || gotIdentity.Type.ValueString() != "A" {
+		t.Fatalf("unexpected identity: %+v", gotIdentity)
+	}
 }

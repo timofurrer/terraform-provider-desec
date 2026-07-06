@@ -240,6 +240,9 @@ func (r *tokenResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	token, err := r.client.GetToken(ctx, data.ID.ValueString())
 	if err != nil {
 		if api.IsNotFound(err) {
+			resp.Diagnostics.Append(resp.Identity.Set(ctx, tokenIdentityModel{
+				ID: data.ID,
+			})...)
 			resp.State.RemoveResource(ctx)
 			return
 		}
@@ -302,6 +305,9 @@ func (r *tokenResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	data.Token = state.Token
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	resp.Diagnostics.Append(resp.Identity.Set(ctx, tokenIdentityModel{
+		ID: types.StringValue(token.ID),
+	})...)
 }
 
 func (r *tokenResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {

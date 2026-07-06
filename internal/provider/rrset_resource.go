@@ -286,6 +286,11 @@ func (r *rrsetResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	)
 	if err != nil {
 		if api.IsNotFound(err) {
+			resp.Diagnostics.Append(resp.Identity.Set(ctx, rrsetIdentityModel{
+				Domain:  data.Domain,
+				Subname: types.StringValue(data.Subname.ValueString()),
+				Type:    data.Type,
+			})...)
 			resp.State.RemoveResource(ctx)
 			return
 		}
@@ -343,6 +348,11 @@ func (r *rrsetResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	resp.Diagnostics.Append(resp.Identity.Set(ctx, rrsetIdentityModel{
+		Domain:  data.Domain,
+		Subname: types.StringValue(data.Subname.ValueString()),
+		Type:    data.Type,
+	})...)
 }
 
 func (r *rrsetResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {

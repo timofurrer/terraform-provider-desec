@@ -8,12 +8,16 @@ import (
 	"fmt"
 	"testing"
 
+	fwresource "github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 	"github.com/hashicorp/terraform-plugin-testing/tfversion"
+	"github.com/timofurrer/terraform-provider-desec/internal/api"
 )
 
 func TestAccTokenPolicyResourceDefault(t *testing.T) {
@@ -705,4 +709,136 @@ resource "desec_token_policy" "specific" {
   depends_on = [desec_token_policy.default]
 }
 `, providerConfig, specificDomain, permWrite)
+}
+
+// TestTokenPolicyResourceUpdate_SetsIdentity calls Update directly with a
+// null starting identity (as would be the case for state written before
+// identity support existed) and verifies the response identity is populated
+// by the resource itself, rather than relying on the framework to carry an
+// existing identity forward. Calling through terraform-plugin-testing
+// wouldn't exercise this: the framework pre-populates a response's identity
+// from the planned/prior identity before invoking the resource, so once some
+// earlier step (like Create) had set identity correctly, that carry-over
+// would mask Update not setting it.
+func TestTokenPolicyResourceUpdate_SetsIdentity(t *testing.T) {
+	ctx := context.Background()
+	client := newIdentityTestClient(t)
+
+	token, err := client.CreateToken(ctx, api.CreateTokenOptions{})
+	if err != nil {
+		t.Fatalf("create token: %v", err)
+	}
+	policy, err := client.CreateTokenPolicy(ctx, token.ID, api.CreateTokenPolicyOptions{PermWrite: false})
+	if err != nil {
+		t.Fatalf("create token policy: %v", err)
+	}
+
+	var prior tokenPolicyResourceModel
+	prior.TokenID = types.StringValue(token.ID)
+	tokenPolicyToModel(policy, &prior)
+
+	res := newTokenPolicyResource()
+	configureTestResource(t, ctx, res, client)
+	schema := resourceSchema(ctx, res)
+
+	updated := prior
+	updated.PermWrite = types.BoolValue(true)
+
+	plan := tfsdk.Plan{Schema: schema.Schema}
+	if diags := plan.Set(ctx, &updated); diags.HasError() {
+		t.Fatalf("build update plan: %v", diags)
+	}
+	state := tfsdk.State{Schema: schema.Schema}
+	if diags := state.Set(ctx, &prior); diags.HasError() {
+		t.Fatalf("build prior state: %v", diags)
+	}
+
+	updateReq := fwresource.UpdateRequest{
+		Plan:     plan,
+		State:    state,
+		Identity: nullResourceIdentity(t, ctx, res),
+	}
+	updateResp := fwresource.UpdateResponse{
+		State:    tfsdk.State{Schema: schema.Schema},
+		Identity: nullResourceIdentity(t, ctx, res),
+	}
+
+	res.Update(ctx, updateReq, &updateResp)
+
+	if updateResp.Diagnostics.HasError() {
+		t.Fatalf("Update returned diagnostics: %v", updateResp.Diagnostics)
+	}
+	requireNonNullIdentity(t, updateResp.Identity)
+
+	var gotIdentity tokenPolicyIdentityModel
+	if diags := updateResp.Identity.Get(ctx, &gotIdentity); diags.HasError() {
+		t.Fatalf("read back identity: %v", diags)
+	}
+	if gotIdentity.TokenID.ValueString() != token.ID || gotIdentity.ID.ValueString() != policy.ID {
+		t.Fatalf("unexpected identity: %+v", gotIdentity)
+	}
+}
+
+// TestTokenPolicyResourceRead_NotFoundSetsIdentity calls Read directly, with
+// a null starting identity, for a token policy that has been deleted
+// out-of-band, and verifies that the not-found branch (which removes the
+// resource from state) also sets identity. Without this, a subsequent plan
+// fails with "Missing Resource Identity After Read" instead of proposing
+// recreation.
+func TestTokenPolicyResourceRead_NotFoundSetsIdentity(t *testing.T) {
+	ctx := context.Background()
+	client := newIdentityTestClient(t)
+
+	token, err := client.CreateToken(ctx, api.CreateTokenOptions{})
+	if err != nil {
+		t.Fatalf("create token: %v", err)
+	}
+	policy, err := client.CreateTokenPolicy(ctx, token.ID, api.CreateTokenPolicyOptions{PermWrite: false})
+	if err != nil {
+		t.Fatalf("create token policy: %v", err)
+	}
+
+	var prior tokenPolicyResourceModel
+	prior.TokenID = types.StringValue(token.ID)
+	tokenPolicyToModel(policy, &prior)
+
+	if err := client.DeleteTokenPolicy(ctx, token.ID, policy.ID); err != nil {
+		t.Fatalf("delete token policy out of band: %v", err)
+	}
+
+	res := newTokenPolicyResource()
+	configureTestResource(t, ctx, res, client)
+	schema := resourceSchema(ctx, res)
+
+	state := tfsdk.State{Schema: schema.Schema}
+	if diags := state.Set(ctx, &prior); diags.HasError() {
+		t.Fatalf("build prior state: %v", diags)
+	}
+
+	readReq := fwresource.ReadRequest{
+		State:    state,
+		Identity: nullResourceIdentity(t, ctx, res),
+	}
+	readResp := fwresource.ReadResponse{
+		State:    tfsdk.State{Schema: schema.Schema},
+		Identity: nullResourceIdentity(t, ctx, res),
+	}
+
+	res.Read(ctx, readReq, &readResp)
+
+	if readResp.Diagnostics.HasError() {
+		t.Fatalf("Read returned diagnostics: %v", readResp.Diagnostics)
+	}
+	if !readResp.State.Raw.IsNull() {
+		t.Fatal("expected Read to remove the resource from state after out-of-band deletion")
+	}
+	requireNonNullIdentity(t, readResp.Identity)
+
+	var gotIdentity tokenPolicyIdentityModel
+	if diags := readResp.Identity.Get(ctx, &gotIdentity); diags.HasError() {
+		t.Fatalf("read back identity: %v", diags)
+	}
+	if gotIdentity.TokenID.ValueString() != token.ID || gotIdentity.ID.ValueString() != policy.ID {
+		t.Fatalf("unexpected identity: %+v", gotIdentity)
+	}
 }

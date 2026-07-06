@@ -9,11 +9,14 @@ import (
 	"regexp"
 	"testing"
 
+	fwresource "github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 	"github.com/hashicorp/terraform-plugin-testing/tfversion"
+	"github.com/timofurrer/terraform-provider-desec/internal/api"
 )
 
 func TestAccDomainResource(t *testing.T) {
@@ -299,4 +302,69 @@ func TestAccDomainResource_Recreate(t *testing.T) {
 			},
 		},
 	})
+}
+
+// TestDomainResourceRead_NotFoundSetsIdentity calls Read directly, with a
+// null starting identity, for a domain that has been deleted out-of-band,
+// and verifies that the not-found branch (which removes the resource from
+// state) also sets identity. Without this, a subsequent plan fails with
+// "Missing Resource Identity After Read" instead of proposing recreation.
+// Calling through terraform-plugin-testing wouldn't exercise this: the
+// framework pre-populates a response's identity from the prior identity
+// before invoking the resource, so once Create had set identity correctly,
+// that carry-over would mask Read's not-found branch not setting it.
+func TestDomainResourceRead_NotFoundSetsIdentity(t *testing.T) {
+	ctx := context.Background()
+	client := newIdentityTestClient(t)
+
+	const domainName = "read-notfound-domain-identity-example.dedyn.io"
+	domain, err := client.CreateDomain(ctx, api.CreateDomainOptions{Name: domainName})
+	if err != nil {
+		t.Fatalf("create domain: %v", err)
+	}
+
+	var prior domainResourceModel
+	if diags := domainToModel(domain, &prior); diags.HasError() {
+		t.Fatalf("build prior model: %v", diags)
+	}
+
+	if err := client.DeleteDomain(ctx, domainName); err != nil {
+		t.Fatalf("delete domain out of band: %v", err)
+	}
+
+	res := newDomainResource()
+	configureTestResource(t, ctx, res, client)
+	schema := resourceSchema(ctx, res)
+
+	state := tfsdk.State{Schema: schema.Schema}
+	if diags := state.Set(ctx, &prior); diags.HasError() {
+		t.Fatalf("build prior state: %v", diags)
+	}
+
+	readReq := fwresource.ReadRequest{
+		State:    state,
+		Identity: nullResourceIdentity(t, ctx, res),
+	}
+	readResp := fwresource.ReadResponse{
+		State:    tfsdk.State{Schema: schema.Schema},
+		Identity: nullResourceIdentity(t, ctx, res),
+	}
+
+	res.Read(ctx, readReq, &readResp)
+
+	if readResp.Diagnostics.HasError() {
+		t.Fatalf("Read returned diagnostics: %v", readResp.Diagnostics)
+	}
+	if !readResp.State.Raw.IsNull() {
+		t.Fatal("expected Read to remove the resource from state after out-of-band deletion")
+	}
+	requireNonNullIdentity(t, readResp.Identity)
+
+	var gotIdentity domainIdentityModel
+	if diags := readResp.Identity.Get(ctx, &gotIdentity); diags.HasError() {
+		t.Fatalf("read back identity: %v", diags)
+	}
+	if gotIdentity.Name.ValueString() != domainName {
+		t.Fatalf("unexpected identity: %+v", gotIdentity)
+	}
 }

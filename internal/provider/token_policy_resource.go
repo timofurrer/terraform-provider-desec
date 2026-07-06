@@ -181,6 +181,10 @@ func (r *tokenPolicyResource) Read(ctx context.Context, req resource.ReadRequest
 	policy, err := r.client.GetTokenPolicy(ctx, data.TokenID.ValueString(), data.ID.ValueString())
 	if err != nil {
 		if api.IsNotFound(err) {
+			resp.Diagnostics.Append(resp.Identity.Set(ctx, tokenPolicyIdentityModel{
+				TokenID: data.TokenID,
+				ID:      data.ID,
+			})...)
 			resp.State.RemoveResource(ctx)
 			return
 		}
@@ -229,6 +233,10 @@ func (r *tokenPolicyResource) Update(ctx context.Context, req resource.UpdateReq
 	tokenPolicyToModel(policy, &data)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	resp.Diagnostics.Append(resp.Identity.Set(ctx, tokenPolicyIdentityModel{
+		TokenID: data.TokenID,
+		ID:      data.ID,
+	})...)
 }
 
 func (r *tokenPolicyResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
