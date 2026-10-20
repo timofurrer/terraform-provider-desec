@@ -1,5 +1,5 @@
-codeberg.org/miekg/dns v0.6.117 h1:1y9FOMy/6xdNIJhSKwdTUJGAtjuSTFaJiZCQ5C9905A=
-codeberg.org/miekg/dns v0.6.117/go.mod h1:vbidSyLJl5JcDUL2LrXCUjRYSFa5tJweseQox0GOrTk=
+codeberg.org/miekg/dns v0.6.118 h1:OGqwrxdJvXHeX7711q4YKYly+PG7C4AwP2v6jPqwJFU=
+codeberg.org/miekg/dns v0.6.118/go.mod h1:vbidSyLJl5JcDUL2LrXCUjRYSFa5tJweseQox0GOrTk=
 dario.cat/mergo v1.0.0 h1:AGCNq9Evsj31mOgNPcLyXc+4PNABt905YmuqPYYpBWk=
 dario.cat/mergo v1.0.0/go.mod h1:uNxQE+84aUszobStD9th8a29P2fMDhsBdgRYvZOxGmk=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=

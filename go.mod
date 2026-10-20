@@ -3,7 +3,7 @@ module github.com/timofurrer/terraform-provider-desec
 go 1.27.0
 
 require (
-	codeberg.org/miekg/dns v0.6.117
+	codeberg.org/miekg/dns v0.6.118
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-querystring v1.2.0
 	github.com/google/uuid v1.6.0
