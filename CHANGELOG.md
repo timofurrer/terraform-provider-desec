@@ -1,3 +1,10 @@
+## 0.6.4 (2026-11-06)
+
+### BUG FIXES (1 change)
+
+- `desec_rrset` and `desec_records` no longer fail with an inconsistent result when a TXT
+  value contains a string longer than 255 characters, which deSEC splits into multiple strings
+
 ## 0.6.3 (2026-07-06)
 
 ### BUG FIXES (1 change)
