@@ -421,7 +421,21 @@ func rrsetToModel(ctx context.Context, rs *api.RRset, m *rrsetResourceModel) dia
 	rdataVals := make([]string, len(rs.Records))
 	copy(rdataVals, rs.Records)
 
-	setVal, diags := types.SetValueFrom(ctx, types.StringType, rdataVals)
+	// m holds the planned values (Create/Update) or the prior state (Read).
+	// Keep those when they are equivalent to what deSEC returned, e.g. a
+	// long TXT string that deSEC split into multiple character-strings.
+	var diags diag.Diagnostics
+	if !m.RData.IsNull() && !m.RData.IsUnknown() {
+		prior, d := rdataFromSet(ctx, m.RData)
+		diags.Append(d...)
+		if diags.HasError() {
+			return diags
+		}
+		rdataVals = reconcileRecords(rs.Type, prior, rdataVals)
+	}
+
+	setVal, d := types.SetValueFrom(ctx, types.StringType, rdataVals)
+	diags.Append(d...)
 	if diags.HasError() {
 		return diags
 	}

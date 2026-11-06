@@ -17,6 +17,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/timofurrer/terraform-provider-desec/internal/api"
+	"github.com/timofurrer/terraform-provider-desec/internal/txtrdata"
 )
 
 const (
@@ -389,7 +390,7 @@ func (s *Server) createRRset(w http.ResponseWriter, r *http.Request) {
 		Subname: req.Subname,
 		Name:    rrsetName(req.Subname, domainName),
 		Type:    req.Type,
-		Records: req.Records,
+		Records: canonicalRecords(req.Type, req.Records),
 		TTL:     req.TTL,
 		Touched: ts,
 	}
@@ -464,7 +465,7 @@ func (s *Server) updateRRset(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		rs.Records = req.Records
+		rs.Records = canonicalRecords(rs.Type, req.Records)
 	}
 	rs.Touched = now()
 
@@ -544,7 +545,7 @@ func (s *Server) bulkUpdateRRsets(w http.ResponseWriter, r *http.Request) {
 				existing.TTL = *req.TTL
 			}
 			if req.Records != nil {
-				existing.Records = req.Records
+				existing.Records = canonicalRecords(existing.Type, req.Records)
 			}
 			existing.Touched = ts
 			results = append(results, *existing)
@@ -562,7 +563,7 @@ func (s *Server) bulkUpdateRRsets(w http.ResponseWriter, r *http.Request) {
 				Subname: req.Subname,
 				Name:    rrsetName(req.Subname, domainName),
 				Type:    req.Type,
-				Records: req.Records,
+				Records: canonicalRecords(req.Type, req.Records),
 				TTL:     ttl,
 				Touched: ts,
 			}
@@ -965,4 +966,23 @@ func paginate[T any](items []T, cursor string) ([]T, string) {
 
 	nextCursor := fmt.Sprintf("%d", end)
 	return items[start:end], nextCursor
+}
+
+// canonicalRecords mimics deSEC's canonicalization of record values: TXT
+// character-strings longer than 255 bytes are split into multiple
+// character-strings within the same record.
+func canonicalRecords(rrtype string, records []string) []string {
+	if !txtrdata.IsTXTLike(rrtype) {
+		return records
+	}
+	out := make([]string, len(records))
+	for i, r := range records {
+		strs, err := txtrdata.Parse(r)
+		if err != nil {
+			out[i] = r
+			continue
+		}
+		out[i] = txtrdata.Format(txtrdata.Split(strs))
+	}
+	return out
 }

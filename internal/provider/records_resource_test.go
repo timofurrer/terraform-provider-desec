@@ -6,6 +6,7 @@ package provider
 import (
 	"fmt"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -1766,4 +1767,69 @@ func TestSetStateAfterWrite_recordsMode(t *testing.T) {
 	if gotRRsets[0].TTL != 3600 {
 		t.Errorf("expected TTL 3600 (server-normalized), got %d", gotRRsets[0].TTL)
 	}
+}
+
+// TestAccRecordsResource_longTXT verifies that desec_records handles TXT
+// values with character-strings longer than 255 bytes, which deSEC splits
+// into multiple character-strings.
+// See https://github.com/timofurrer/terraform-provider-desec/issues/69.
+func TestAccRecordsResource_longTXT(t *testing.T) {
+	domainName := testAccDomainName(t, "records-longtxt")
+	providerConfig, factories := newTestAccEnv(t)
+
+	long := `"v=DKIM1; k=rsa; p=` + strings.Repeat("A", 400) + `"`
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccRecordsSetConfig(providerConfig, domainName, fmt.Sprintf(`
+    {
+      subname = "dkim._domainkey"
+      type    = "TXT"
+      ttl     = 3600
+      rdata   = [%q]
+    },
+`, long)),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("desec_records.test",
+						tfjsonpath.New("rrsets"), knownvalue.SetExact([]knownvalue.Check{
+							knownvalue.ObjectPartial(map[string]knownvalue.Check{
+								"rdata": knownvalue.SetExact([]knownvalue.Check{knownvalue.StringExact(long)}),
+							}),
+						})),
+				},
+			},
+			// Only change the TTL.
+			{
+				Config: testAccRecordsSetConfig(providerConfig, domainName, fmt.Sprintf(`
+    {
+      subname = "dkim._domainkey"
+      type    = "TXT"
+      ttl     = 7200
+      rdata   = [%q]
+    },
+`, long)),
+			},
+		},
+	})
+}
+
+func TestAccRecordsResource_zonefileLongTXT(t *testing.T) {
+	domainName := testAccDomainName(t, "records-zf-longtxt")
+	providerConfig, factories := newTestAccEnv(t)
+
+	long := `"v=DKIM1; k=rsa; p=` + strings.Repeat("A", 400) + `"`
+	zonefile := fmt.Sprintf("dkim._domainkey.%s. 3600 IN TXT %s\n", domainName, long)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccRecordsZonefileConfig(providerConfig, domainName, zonefile),
+			},
+		},
+	})
 }
