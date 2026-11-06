@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 	"testing"
 
 	fwresource "github.com/hashicorp/terraform-plugin-framework/resource"
@@ -858,4 +859,46 @@ func TestRRsetResourceRead_NotFoundSetsIdentity(t *testing.T) {
 	if gotIdentity.Domain.ValueString() != domainName || gotIdentity.Subname.ValueString() != "www" || gotIdentity.Type.ValueString() != "A" {
 		t.Fatalf("unexpected identity: %+v", gotIdentity)
 	}
+}
+
+// TestAccRRsetResource_longTXT verifies that a TXT value with a
+// character-string longer than 255 bytes, which deSEC splits into multiple
+// character-strings, does not cause an inconsistent result or perpetual diff.
+// See https://github.com/timofurrer/terraform-provider-desec/issues/69.
+func TestAccRRsetResource_longTXT(t *testing.T) {
+	domainName := testAccDomainName(t, "rec-longtxt")
+	providerConfig, factories := newTestAccEnv(t)
+
+	long1 := `"v=DKIM1; k=rsa; p=` + strings.Repeat("A", 400) + `"`
+	long2 := `"v=DKIM1; k=rsa; p=` + strings.Repeat("B", 600) + `"`
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccRRsetResourceTypedConfig(providerConfig, domainName, "dkim._domainkey", "TXT", 3600, fmt.Sprintf("%q", long1)),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("desec_rrset.test", tfjsonpath.New("rdata"),
+						knownvalue.SetExact([]knownvalue.Check{knownvalue.StringExact(long1)})),
+				},
+			},
+			// Only change the TTL; the long value must be kept as configured.
+			{
+				Config: testAccRRsetResourceTypedConfig(providerConfig, domainName, "dkim._domainkey", "TXT", 7200, fmt.Sprintf("%q", long1)),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("desec_rrset.test", tfjsonpath.New("rdata"),
+						knownvalue.SetExact([]knownvalue.Check{knownvalue.StringExact(long1)})),
+				},
+			},
+			// Change to a different long value plus a short one.
+			{
+				Config: testAccRRsetResourceTypedConfig(providerConfig, domainName, "dkim._domainkey", "TXT", 7200, fmt.Sprintf("%q, %q", long2, `"short"`)),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("desec_rrset.test", tfjsonpath.New("rdata"),
+						knownvalue.SetExact([]knownvalue.Check{knownvalue.StringExact(long2), knownvalue.StringExact(`"short"`)})),
+				},
+			},
+		},
+	})
 }

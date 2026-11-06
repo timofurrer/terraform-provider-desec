@@ -278,6 +278,7 @@ func (r *recordsResource) Create(ctx context.Context, req resource.CreateRequest
 	}
 
 	sortRRsets(returned)
+	returned = reconcileRRsets(rrsets, returned)
 	resp.Diagnostics.Append(r.setStateAfterWrite(ctx, &data, domain, returned)...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -303,6 +304,7 @@ func (r *recordsResource) Read(ctx context.Context, req resource.ReadRequest, re
 	}
 
 	var managed []api.RRset
+	var stateRRsets []api.RRset
 
 	importCase := data.RRsets.IsNull() || data.RRsets.IsUnknown() || len(data.RRsets.Elements()) == 0
 	if importCase || data.Exclusive.ValueBool() {
@@ -316,13 +318,16 @@ func (r *recordsResource) Read(ctx context.Context, req resource.ReadRequest, re
 			}
 			managed = append(managed, rs)
 		}
-	} else {
-		stateRRsets, diags := recordsSetToAPIRRsets(ctx, data.RRsets)
+	}
+	if !importCase {
+		var diags diag.Diagnostics
+		stateRRsets, diags = recordsSetToAPIRRsets(ctx, data.RRsets)
 		resp.Diagnostics.Append(diags...)
 		if resp.Diagnostics.HasError() {
 			return
 		}
-
+	}
+	if !importCase && !data.Exclusive.ValueBool() {
 		type rrKey struct{ subname, rrtype string }
 		owned := make(map[rrKey]bool, len(stateRRsets))
 		for _, rs := range stateRRsets {
@@ -336,6 +341,7 @@ func (r *recordsResource) Read(ctx context.Context, req resource.ReadRequest, re
 	}
 
 	sortRRsets(managed)
+	managed = reconcileRRsets(stateRRsets, managed)
 
 	recordsSet, diags := apiRRsetsToSet(ctx, managed)
 	resp.Diagnostics.Append(diags...)
@@ -391,6 +397,7 @@ func (r *recordsResource) Update(ctx context.Context, req resource.UpdateRequest
 	}
 
 	sortRRsets(returned)
+	returned = reconcileRRsets(newRRsets, returned)
 	resp.Diagnostics.Append(r.setStateAfterWrite(ctx, &plan, domain, returned)...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
@@ -596,7 +603,9 @@ func rrsetSetsEqual(a, b []api.RRset) bool {
 		m := make(map[rrKey]rrVal, len(rrsets))
 		for _, rs := range rrsets {
 			recs := make([]string, len(rs.Records))
-			copy(recs, rs.Records)
+			for i, rec := range rs.Records {
+				recs[i] = canonicalRecord(rs.Type, rec)
+			}
 			sort.Strings(recs)
 			m[rrKey{rs.Subname, rs.Type}] = rrVal{rs.TTL, strings.Join(recs, "\x00")}
 		}
@@ -614,6 +623,28 @@ func rrsetSetsEqual(a, b []api.RRset) bool {
 		}
 	}
 	return true
+}
+
+// reconcileRRsets replaces the records of each RRset in actual with the
+// records of the matching RRset in prior when both are equivalent (see
+// reconcileRecords). This keeps the user's representation in state when
+// deSEC returns a differently formatted but equivalent value, e.g. a long
+// TXT string split into multiple character-strings.
+func reconcileRRsets(prior, actual []api.RRset) []api.RRset {
+	type rrKey struct{ subname, rrtype string }
+	priorRecs := make(map[rrKey][]string, len(prior))
+	for _, rs := range prior {
+		priorRecs[rrKey{rs.Subname, rs.Type}] = rs.Records
+	}
+
+	out := make([]api.RRset, len(actual))
+	for i, rs := range actual {
+		if p, ok := priorRecs[rrKey{rs.Subname, rs.Type}]; ok {
+			rs.Records = reconcileRecords(rs.Type, p, rs.Records)
+		}
+		out[i] = rs
+	}
+	return out
 }
 
 func rrsetsToPutEntries(rrsets []api.RRset) []api.BulkPutRRsetEntry {
